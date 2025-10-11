@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Painel de Pedidos - DoceSystem{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h3 class="page-title">Painel de Pedidos</h3>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h4 class="card-title">Lista de Pedidos</h4>
+
+    <!-- Tabela de pedidos -->
+    <div class="table-responsive">
+      <table class="table table-hover" id="tabelaPedidos">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Cliente</th>
+            <th>Data do Evento</th>
+            <th>Data de Retirada</th>
+            <th>Horário</th>
+            <th>Tipo do Pedido</th>
+            <th>Quantidade</th>
+            <th>Status</th>
+            <th>Prioridade</th>
+            <th>Responsável</th>
+          </tr>
+        </thead>
+        <tbody id="pedidosTableBody">
+          <!-- Linhas serão preenchidas via JS -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Área de feedback -->
+    <div id="mensagemErro" class="text-danger mt-3" style="display:none;">
+      Ocorreu um erro ao carregar os pedidos.
+    </div>
+  </div>
+</div>
+
+<!-- Importa o JS que carrega os pedidos -->
+<script src="{{ url_for('static', filename='js/pedidos.js') }}"></script>
+{% endblock %}
