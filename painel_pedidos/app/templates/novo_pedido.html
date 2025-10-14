@@ -137,7 +137,7 @@ document.addEventListener('DOMContentLoaded', function() {
         pedidoData.sabores = nomesProdutos.join(', ');
 
         try {
-            const response = await fetch('/api/pedidos', {
+            const response = await fetch('/api/pedidos/cadastro', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -517,3 +517,40 @@ body {
         font-size: 0.813rem;
     }
 }
+
+.acao-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Layout painel de pedidos */
+
+.btn-outline-success i,
+.btn-outline-danger i {
+  transition: transform 0.2s ease;
+}
+
+.btn-outline-success:hover i {
+  transform: scale(1.1);
+  color: white;
+}
+
+.btn-outline-danger:hover i {
+  transform: scale(1.1);
+  color: white;
+}
+.btn-outline-success i,
+.btn-outline-danger i {
+  transition: transform 0.2s ease;
+}
+
+.btn-outline-success:hover i {
+  transform: scale(1.1);
+  color: white;
+}
+
+.btn-outline-danger:hover i {
+  transform: scale(1.1);
+  color: white;
+}
+

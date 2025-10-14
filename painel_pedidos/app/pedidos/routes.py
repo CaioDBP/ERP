@@ -7,8 +7,8 @@ from app.models import Pedido, User # Importamos nossos modelos
 
 pedidos_bp = Blueprint('pedidos', __name__, url_prefix='/api/pedidos')
 
-@pedidos_bp.route('', methods=['POST'])
-def create_pedido():
+@pedidos_bp.route('/cadastro', methods=['POST'])
+def create_pedido_cadastro():
     data = request.json
     user_id = request.headers.get('X-User-Id')
 
@@ -19,6 +19,72 @@ def create_pedido():
     required_fields = ['clienteNome', 'dataEvento', 'quantidade', 'tipoPedido', 'dataRetirada', 'horarioRetirada']
     if not all(field in data and data[field] for field in required_fields):
         return jsonify({'message': 'Campos obrigatórios faltando.'}), 400
+
+    # Em vez de criar um dicionário, criamos uma instância do nosso modelo Pedido
+    new_pedido = Pedido(
+        clienteNome=data['clienteNome'],
+        dataEvento=data['dataEvento'],
+        dataRetirada=data['dataRetirada'],
+        horarioRetirada=data['horarioRetirada'],
+        tipoPedido=data['tipoPedido'],
+        quantidade=int(data['quantidade']),
+        sabores=data.get('sabores', ''),
+        tipoEmbalagem=data.get('tipoEmbalagem', ''),
+        observacoes=data.get('observacoes', ''),
+        status='pendente',
+        prioridade=data.get('prioridade', 'normal'),
+        responsavel=data.get('responsavel', None),
+        user_id=user_id, # Ligamos o pedido ao usuário
+        # Campos do contrato
+        clienteRG=data.get('clienteRG', ''),
+        clienteCPF=data.get('clienteCPF', ''),
+        nomeContratado=data.get('nomeContratado', ''),
+        cnpjContratado=data.get('cnpjContratado', ''),
+        valorTotalPedidoContrato=data.get('valorTotalPedidoContrato', ''),
+        dataPagamentoContrato=data.get('dataPagamentoContrato', ''),
+        localEvento=data.get('localEvento', ''),
+        produtosContratadosJson=data.get('produtosContratadosJson', '[]')
+    )
+
+    # Adicionamos à sessão e salvamos no banco de dados
+    db.session.add(new_pedido)
+    db.session.commit()
+
+    return jsonify({'message': 'Pedido salvo com sucesso!', 'pedido': new_pedido.to_dict()}), 201
+
+
+
+@pedidos_bp.route('', methods=['POST'])
+def create_pedido():
+    """Essa função lida com o pedido que vem do upload contrato"""
+    data = request.json
+    user_id = request.headers.get('X-User-Id')
+
+    if not user_id:
+        return jsonify({'message': 'Usuário não autenticado.'}), 401
+    
+    # Validação dos campos continua igual...
+    required_fields = ['clienteNome', 'dataEvento', 'quantidade', 'tipoPedido', 'dataRetirada', 'horarioRetirada']
+    if not all(field in data and data[field] for field in required_fields):
+        return jsonify({'message': 'Campos obrigatórios faltando.'}), 400
+
+    # ALTERAÇÃO QUE SALVA TODAS AS "DATAEVENTO" NO FORMATO YYYY-MM-DD
+
+    print("antes da formatacao", type(data["dataEvento"]))
+    
+    # dataEvento = datetime.strptime(data['dataEvento'], '%d-%m-%Y').date()
+    dataEvento = data["dataEvento"]
+    # dataEvento = slice(dataEvento)
+    # print(dataEvento)
+    dias = dataEvento[0:2]
+    mes = dataEvento[3:5]
+    ano = dataEvento[6:10]
+    dataEvento = ano + "-" + mes +"-"+dias
+    data["dataEvento"] = dataEvento
+    # print(data["dataEvento"])
+
+
+
 
     # Em vez de criar um dicionário, criamos uma instância do nosso modelo Pedido
     new_pedido = Pedido(
