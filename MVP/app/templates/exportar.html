@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Exportação - DoceSystem{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/pedidos">Início</a>
+        <span>/</span>
+        <span>Exportação</span>
+    </div>
+    <h1 class="page-title">Exportação de Pedidos</h1>
+    <p class="page-subtitle">Selecione e exporte pedidos confirmados para a produção</p>
+</div>
+
+<!-- Filtros -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Filtros</h3>
+    </div>
+    <div class="card-body">
+        <form id="filter-form" class="filters-grid">
+            <div class="form-group">
+                <label class="form-label">Data de Início</label>
+                <input type="date" class="form-input" name="dataInicio" id="dataInicio">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Data de Fim</label>
+                <input type="date" class="form-input" name="dataFim" id="dataFim">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Nome do Cliente</label>
+                <input type="text" class="form-input" name="cliente" id="cliente" placeholder="Ex: Ana, João...">
+            </div>
+            <div class="form-group">
+                <label class="form-label">&nbsp;</label>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-filter"></i>
+                    Filtrar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Tabela -->
+<div class="card" style="margin-top: 1.5rem;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h3 class="card-title">Pedidos Confirmados</h3>
+            <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                <span id="pedidosSelecionados">0</span> pedidos selecionados
+            </p>
+        </div>
+        <button class="btn btn-success" id="generate-selected-planilha-btn">
+            <i class="fas fa-file-excel"></i>
+            Gerar Planilha
+        </button>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">
+                            <input type="checkbox" id="select-all-pedidos">
+                        </th>
+                        <th>Cliente</th>
+                        <th>Data de Retirada</th>
+                        <th>Produto</th>
+                        <th>Quantidade</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="pedidos-export-table-body">
+                    <!-- Linhas serão inseridas via JS -->
+                </tbody>
+            </table>
+            <p id="no-pedidos-export-message" class="text-center text-gray-500 hidden" style="padding: 1rem;">
+                Nenhum pedido encontrado.
+            </p>
+        </div>
+    </div>
+</div>
+
+<p id="export-message" class="hidden text-center mt-4 text-sm"></p>
+
+<style>
+.hidden {
+    display: none !important; 
+}
+
+
+.export-message {
+    text-align: center;
+    margin-top: 1rem;
+    font-weight: 500;
+}
+.export-message.success {
+    color: green;
+}
+.export-message.error {
+    color: red;
+}
+
+.filters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+
+</style>
+
+<script src="{{ url_for('static', filename='js/exportacao.js') }}"></script>
+{% endblock %}

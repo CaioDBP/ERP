@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}Upload de Contratos - DoceSystem{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/pedidos">Início</a>
+        <span>/</span>
+        <span>Upload de Contratos</span>
+    </div>
+    <h1 class="page-title">Upload de Contratos</h1>
+    <p class="page-subtitle">Faça upload de contratos em PDF para extração automática de dados</p>
+</div>
+
+<div class="upload-container">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Selecionar Arquivo</h3>
+        </div>
+        <div class="card-body">
+            <div class="drag-drop-area" id="dragDropArea">
+                <i class="fas fa-file-pdf" style="font-size: 4rem; color: var(--primary-color); margin-bottom: 1rem;"></i>
+                <h3>Arraste o arquivo PDF aqui</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 1rem;">ou clique para selecionar</p>
+                <button type="button" class="btn btn-primary" onclick="pdfInput.click()">
+                    <i class="fas fa-upload"></i> Selecionar PDF
+                </button>
+                <input type="file" id="pdfInput" accept=".pdf" style="display: none;">
+            </div>
+            
+            <div class="selected-file" id="selectedFile" style="display: none;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <i class="fas fa-file-pdf" style="font-size: 2rem; color: #dc2626;"></i>
+                        <div>
+                            <p><strong id="fileName"></strong></p>
+                            <p style="font-size: 0.875rem; color: var(--text-secondary);" id="fileSize"></p>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-danger" onclick="removerArquivo()">
+                        <i class="fas fa-times"></i> Remover
+                    </button>
+                </div>
+                <button type="button" class="btn btn-primary btn-block" style="margin-top: 1rem;" onclick="analisarContrato()">
+                    <i class="fas fa-search"></i> Analisar Contrato
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" id="previewCard" style="margin-top: 1.5rem; display: none;">
+        <div class="card-header">
+            <h3 class="card-title">Prévia dos Dados Extraídos</h3>
+        </div>
+        <div class="card-body">
+            <div class="extraction-loading" id="loadingExtraction" style="display: none;">
+                <div class="spinner"></div>
+                <p>Analisando contrato e extraindo dados...</p>
+            </div>
+
+            <div id="extractedData" style="display: none;">
+                <div class="info-grid">
+                    <div class="info-item"><label>Cliente</label><p id="clienteNome"></p></div>
+                    <div class="info-item"><label>CPF</label><p id="clienteCPF"></p></div>
+                    <div class="info-item"><label>Telefone</label><p id="clienteTelefone"></p></div>
+                    <div class="info-item"><label>E-mail</label><p id="clienteEmail"></p></div>
+                    <div class="info-item"><label>Data do Evento</label><p id="dataEvento"></p></div>
+                    <div class="info-item"><label>Local do Evento</label><p id="localEvento"></p></div>
+                    <div class="info-item full-width"><label>Produtos Contratados</label><p id="produtosContratados"></p></div>
+                    <div class="info-item"><label>Valor Total</label><p><strong id="valorTotal" style="color: var(--primary-color);"></strong></p></div>
+                    <div class="info-item"><label>Forma de Pagamento</label><p id="formaPagamento"></p></div>
+                </div>
+
+                <div class="form-actions-bottom">
+                    <button type="button" class="btn btn-secondary" onclick="cancelarExtracao()">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="salvarPedido()">
+                        <i class="fas fa-save"></i> Salvar como Pedido
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.upload-container { max-width: 900px; }
+.drag-drop-area { border: 3px dashed var(--border-color); border-radius: 1rem; padding: 3rem 2rem; text-align: center; transition: all 0.3s; cursor: pointer; }
+.drag-drop-area:hover, .drag-drop-area.drag-over { border-color: var(--primary-color); background: #f8fafc; }
+.selected-file { padding: 1.5rem; background: #f8fafc; border-radius: 0.75rem; margin-top: 1rem; }
+.extraction-loading { text-align: center; padding: 3rem; }
+.spinner { border: 4px solid #f3f4f6; border-top: 4px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; margin-bottom: 1.5rem; }
+.info-item label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+.info-item p { font-size: 0.938rem; color: var(--text-primary); }
+.info-item.full-width { grid-column: 1 / -1; }
+.form-actions-bottom { display: flex; justify-content: flex-end; gap: 1rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color); }
+@media (max-width: 768px) { .info-grid { grid-template-columns: 1fr; } }
+</style>
+
+<script>
+// console.log("essa versao de upload de contrado ja esta refatorada, modulada e pronta")
+
+const dragDropArea = document.getElementById('dragDropArea');
+const pdfInput = document.getElementById('pdfInput');
+const selectedFile = document.getElementById('selectedFile');
+const previewCard = document.getElementById('previewCard');
+let extractedDataGlobal = null;
+
+// Drag & drop
+dragDropArea.addEventListener('dragover', e => { e.preventDefault(); dragDropArea.classList.add('drag-over'); });
+dragDropArea.addEventListener('dragleave', () => dragDropArea.classList.remove('drag-over'));
+dragDropArea.addEventListener('drop', e => {
+    e.preventDefault(); dragDropArea.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if(files.length > 0 && files[0].type === 'application/pdf'){ handleFile(files[0]); }
+});
+
+// File input
+pdfInput.addEventListener('change', e => { if(e.target.files.length > 0) handleFile(e.target.files[0]); });
+
+function handleFile(file){
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileSize').textContent = (file.size/1024).toFixed(2)+' KB';
+    dragDropArea.style.display='none'; selectedFile.style.display='block';
+}
+
+// Remove file
+function removerArquivo(){ pdfInput.value=''; dragDropArea.style.display='block'; selectedFile.style.display='none'; previewCard.style.display='none'; extractedDataGlobal=null; }
+
+// Cancel extraction
+function cancelarExtracao(){ removerArquivo(); }
+
+// Analyze contract
+async function analisarContrato(){
+    // console.log("caio")
+    const file = pdfInput.files[0];
+    if(!file){ alert('Selecione um arquivo antes.'); return; }
+
+    const userId = localStorage.getItem('userId');
+    if(!userId){ alert('Você precisa estar logado para analisar um contrato.'); return; }
+
+    previewCard.style.display='block';
+    document.getElementById('loadingExtraction').style.display='block';
+    document.getElementById('extractedData').style.display='none';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try{
+        const response = await fetch('/api/contracts/upload', {
+            method:'POST',
+            headers: { 'X-User-Id': userId },
+            body: formData
+        });
+        const result = await response.json();
+        document.getElementById('loadingExtraction').style.display='none';
+        if(response.ok){
+            extractedDataGlobal = result.extractedData;
+            // Preenche campos
+            document.getElementById('clienteNome').textContent = extractedDataGlobal.clienteNome || 'N/A';
+            document.getElementById('clienteCPF').textContent = extractedDataGlobal.clienteCPF || 'N/A';
+            document.getElementById('clienteTelefone').textContent = extractedDataGlobal.Telefone || 'N/A';
+            document.getElementById('clienteEmail').textContent = extractedDataGlobal.Email || 'N/A';
+            document.getElementById('dataEvento').textContent = extractedDataGlobal.dataEvento || 'N/A';
+            document.getElementById('localEvento').textContent = extractedDataGlobal.localEvento || 'N/A';
+            document.getElementById('produtosContratados').textContent = extractedDataGlobal.produtosContratadosJson ? JSON.parse(extractedDataGlobal.produtosContratadosJson).map(p=>p.Produto).join(', ') : '';
+            document.getElementById('valorTotal').textContent = extractedDataGlobal.valorTotalPedidoContrato || 'N/A';
+            document.getElementById('formaPagamento').textContent = extractedDataGlobal.dataPagamentoContrato || 'N/A';
+            document.getElementById('extractedData').style.display='block';
+        } else{
+            alert(result.message || 'Erro ao analisar contrato.');
+        }
+    }catch(error){
+        console.error('Erro ao analisar contrato:', error);
+        alert('Erro de conexão com o servidor.');
+    }
+}
+
+// Save as pedido
+async function salvarPedido(){
+    if(!extractedDataGlobal){ alert('Nenhum dado extraído para salvar.'); return; }
+    const userId = localStorage.getItem('userId');
+    if(!userId){ alert('Você precisa estar logado para salvar um pedido.'); return; }
+
+    // Preencher campos obrigatórios caso estejam vazios
+    extractedDataGlobal.dataRetirada = extractedDataGlobal.dataRetirada || extractedDataGlobal.dataEvento;
+    extractedDataGlobal.horarioRetirada = extractedDataGlobal.horarioRetirada || '12:00';
+    extractedDataGlobal.status = 'pendente';
+
+    try{
+        const response = await fetch('/api/pedidos', {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json', 'X-User-Id': userId },
+            body: JSON.stringify(extractedDataGlobal)
+        });
+        const result = await response.json();
+        if(response.ok){
+            alert('Pedido salvo com sucesso! Redirecionando...');
+            setTimeout(()=>{ window.location.href='/pedidos'; }, 1500);
+        } else{
+            alert(result.message || 'Erro ao salvar pedido.');
+        }
+    }catch(error){
+        console.error('Erro ao salvar pedido:', error);
+        alert('Erro de conexão ao salvar pedido.');
+    }
+}
+</script>
+{% endblock %}

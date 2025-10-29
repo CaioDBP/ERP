@@ -1,0 +1,27 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+.env
+
+# Ambiente Virtual do Python
+venv/
+/venv/
+
+# Arquivos compilados e cache do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Pasta de uploads temporários
+uploads_temp/
+
+# Arquivos de instância do Flask
+instance/
+
+# Arquivos obsoletos do projeto
+data.json
+test_db.py
+site.db
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
