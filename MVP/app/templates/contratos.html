@@ -10,8 +10,7 @@
         <span>Upload de Contratos</span>
     </div>
     <h1 class="page-title">Upload de Contratos</h1>
-    <p class="page-subtitle">Faça upload de contratos em PDF para extração automática de dados</p>
-</div>
+    <p class="page-subtitle">Faça upload de contratos em PDF ou DOCX para extração automática de dados</p> </div>
 
 <div class="upload-container">
     <div class="card">
@@ -20,20 +19,19 @@
         </div>
         <div class="card-body">
             <div class="drag-drop-area" id="dragDropArea">
-                <i class="fas fa-file-pdf" style="font-size: 4rem; color: var(--primary-color); margin-bottom: 1rem;"></i>
-                <h3>Arraste o arquivo PDF aqui</h3>
+                <i class="fas fa-file-arrow-up" style="font-size: 4rem; color: var(--primary-color); margin-bottom: 1rem;"></i> 
+                <h3>Arraste o arquivo PDF ou DOCX aqui</h3>
                 <p style="color: var(--text-secondary); margin-bottom: 1rem;">ou clique para selecionar</p>
-                <button type="button" class="btn btn-primary" onclick="pdfInput.click()">
-                    <i class="fas fa-upload"></i> Selecionar PDF
+                <button type="button" class="btn btn-primary" onclick="fileInput.click()"> <i class="fas fa-upload"></i> Selecionar Arquivo
                 </button>
-                <input type="file" id="pdfInput" accept=".pdf" style="display: none;">
+                
+                <input type="file" id="fileInput" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
             </div>
             
             <div class="selected-file" id="selectedFile" style="display: none;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <div style="display: flex; align-items: center; gap: 1rem;">
-                        <i class="fas fa-file-pdf" style="font-size: 2rem; color: #dc2626;"></i>
-                        <div>
+                        <i class="fas fa-file-pdf" id="fileIcon" style="font-size: 2rem; color: #dc2626;"></i> <div>
                             <p><strong id="fileName"></strong></p>
                             <p style="font-size: 0.875rem; color: var(--text-secondary);" id="fileSize"></p>
                         </div>
@@ -56,15 +54,12 @@
     </div>
 
     <div class="card" id="previewCard" style="margin-top: 1.5rem; display: none;">
-        <div class="card-header">
-            <h3 class="card-title">Prévia dos Dados Extraídos</h3>
-        </div>
+        <div class="card-header"><h3 class="card-title">Prévia dos Dados Extraídos</h3></div>
         <div class="card-body">
             <div class="extraction-loading" id="loadingExtraction" style="display: none;">
                 <div class="spinner"></div>
                 <p>Analisando contrato e extraindo dados...</p>
             </div>
-
             <div id="extractedData" style="display: none;">
                 <div class="info-grid">
                     <div class="info-item"><label>Cliente</label><p id="clienteNome"></p></div>
@@ -78,7 +73,6 @@
                     <div class="info-item"><label>Valor Total</label><p><strong id="valorTotal" style="color: var(--primary-color);"></strong></p></div>
                     <div class="info-item"><label>Forma de Pagamento</label><p id="formaPagamento"></p></div>
                 </div>
-
                 <div class="form-actions-bottom">
                     <button type="button" class="btn btn-secondary" onclick="cancelarExtracao()">
                         <i class="fas fa-times"></i> Cancelar
@@ -110,25 +104,62 @@
 </style>
 
 <script>
-// (JAVASCRIPT CORRETO DA SUA VERSÃO)
 const dragDropArea = document.getElementById('dragDropArea');
-const pdfInput = document.getElementById('pdfInput');
+const fileInput = document.getElementById('fileInput'); // <-- Mudança de nome (pdfInput -> fileInput)
 const selectedFile = document.getElementById('selectedFile');
 const previewCard = document.getElementById('previewCard');
 let extractedDataGlobal = null;
 
-// --- Funções de UI (inalteradas) ---
+// --- MUDANÇA (SUPORTE A .DOCX) ---
+const docxType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const pdfType = 'application/pdf';
+
 dragDropArea.addEventListener('dragover', e => { e.preventDefault(); dragDropArea.classList.add('drag-over'); });
 dragDropArea.addEventListener('dragleave', () => dragDropArea.classList.remove('drag-over'));
-dragDropArea.addEventListener('drop', e => { e.preventDefault(); dragDropArea.classList.remove('drag-over'); const files = e.dataTransfer.files; if(files.length > 0 && files[0].type === 'application/pdf'){ handleFile(files[0]); } });
-pdfInput.addEventListener('change', e => { if(e.target.files.length > 0) handleFile(e.target.files[0]); });
-function handleFile(file){ document.getElementById('fileName').textContent = file.name; document.getElementById('fileSize').textContent = (file.size/1024).toFixed(2)+' KB'; dragDropArea.style.display='none'; selectedFile.style.display='block'; }
-function removerArquivo(){ pdfInput.value=''; dragDropArea.style.display='block'; selectedFile.style.display='none'; previewCard.style.display='none'; extractedDataGlobal=null; }
+dragDropArea.addEventListener('drop', e => { 
+    e.preventDefault(); dragDropArea.classList.remove('drag-over'); 
+    const files = e.dataTransfer.files;
+    // (Validação de tipo de arquivo atualizada)
+    if(files.length > 0 && (files[0].type === pdfType || files[0].type === docxType || files[0].name.endsWith('.docx'))) {
+        handleFile(files[0]); 
+    } else {
+        alert('Por favor, arraste apenas arquivos .pdf ou .docx');
+    }
+});
+fileInput.addEventListener('change', e => { if(e.target.files.length > 0) handleFile(e.target.files[0]); });
+
+function handleFile(file){ 
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileSize').textContent = (file.size/1024).toFixed(2)+' KB';
+    
+    // (Muda o ícone baseado no tipo de arquivo)
+    const icon = document.getElementById('fileIcon');
+    if (file.name.endsWith('.docx') || file.type === docxType) {
+        icon.className = 'fas fa-file-word'; // Ícone do Word
+        icon.style.color = '#2b579a'; // Azul do Word
+    } else {
+        icon.className = 'fas fa-file-pdf'; // Ícone do PDF
+        icon.style.color = '#dc2626'; // Vermelho do PDF
+    }
+    
+    dragDropArea.style.display='none'; 
+    selectedFile.style.display='block'; 
+}
+
+function removerArquivo(){ 
+    fileInput.value=''; // Limpa o input
+    dragDropArea.style.display='block'; 
+    selectedFile.style.display='none'; 
+    previewCard.style.display='none'; 
+    extractedDataGlobal=null; 
+}
+// --- FIM DA MUDANÇA ---
+
 function cancelarExtracao(){ removerArquivo(); }
 
-// --- FUNÇÃO DE ANÁLISE (ATUALIZADA) ---
+// --- FUNÇÃO DE ANÁLISE (Inalterada) ---
 async function analisarContrato(tipo_analise) {
-    const file = pdfInput.files[0];
+    const file = fileInput.files[0]; // (Usa o 'fileInput' correto)
     if(!file){ alert('Selecione um arquivo antes.'); return; }
 
     const userId = localStorage.getItem('userId');
@@ -140,7 +171,6 @@ async function analisarContrato(tipo_analise) {
 
     const formData = new FormData();
     formData.append('file', file);
-    // (Envia o tipo de análise correto para a API)
     formData.append('tipo_analise', tipo_analise); 
 
     try {
@@ -155,19 +185,17 @@ async function analisarContrato(tipo_analise) {
         if(response.ok) {
             extractedDataGlobal = result.extractedData;
             
-            // (Mapeamento de dados correto para a estrutura aninhada)
+            // (O mapeamento de dados permanece o mesmo)
             document.getElementById('clienteNome').textContent = extractedDataGlobal.Contratante.Nome || 'N/A';
             document.getElementById('clienteCPF').textContent = extractedDataGlobal.Contratante.CPF || 'N/A';
             document.getElementById('clienteTelefone').textContent = extractedDataGlobal.Contratante.Telefone || 'N/A';
             document.getElementById('clienteEmail').textContent = extractedDataGlobal.Contratante.Email || 'N/A';
-            
             document.getElementById('dataEvento').textContent = extractedDataGlobal.Data_do_Evento || 'N/A';
             document.getElementById('localEvento').textContent = extractedDataGlobal.Local_do_Evento || 'N/A';
             document.getElementById('dataPagamento').textContent = extractedDataGlobal.Data_de_Pagamento || 'N/A';
             document.getElementById('valorTotal').textContent = extractedDataGlobal.Valor_Total_do_Pedido || 'N/A';
             document.getElementById('formaPagamento').textContent = extractedDataGlobal.FormaDePagamento || 'N/A';
             
-            // (Formata os produtos corretamente)
             let produtosTexto = 'N/A';
             if (extractedDataGlobal.produtosContratadosJson && extractedDataGlobal.produtosContratadosJson !== '[]') {
                 try {
@@ -188,13 +216,12 @@ async function analisarContrato(tipo_analise) {
     }
 }
 
-// --- FUNÇÃO DE SALVAR PEDIDO (ATUALIZADA) ---
+// --- FUNÇÃO DE SALVAR PEDIDO (Inalterada) ---
 async function salvarPedido() {
     if(!extractedDataGlobal){ alert('Nenhum dado extraído para salvar.'); return; }
     const userId = localStorage.getItem('userId');
     if(!userId){ alert('Você precisa estar logado para salvar um pedido.'); return; }
 
-    // ("Traduz" os dados do extrator para o formato que a API de Pedidos espera)
     const produtos = JSON.parse(extractedDataGlobal.produtosContratadosJson || '[]');
     const quantidadeTotal = produtos.reduce((sum, item) => sum + parseInt(item.Quantidade || 0), 0);
     const sabores = produtos.map(p => p.Produto).join(', ');
@@ -210,8 +237,6 @@ async function salvarPedido() {
         dataPagamentoContrato: extractedDataGlobal.Data_de_Pagamento,
         quantidade: quantidadeTotal,
         sabores: sabores,
-        
-        // (Campos padrão obrigatórios)
         dataRetirada: extractedDataGlobal.Data_do_Evento || new Date().toISOString().slice(0, 10),
         horarioRetirada: '12:00',
         status: 'pendente',
@@ -220,7 +245,6 @@ async function salvarPedido() {
     };
 
     try {
-        // (Envia o payload "traduzido" para a API de Pedidos)
         const response = await fetch('/api/pedidos', {
             method:'POST',
             headers:{ 'Content-Type':'application/json', 'X-User-Id': userId },

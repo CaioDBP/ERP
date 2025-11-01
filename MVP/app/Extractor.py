@@ -1,4 +1,4 @@
-# Arquivo: app/Extractor.py (VERSÃO DE DEBUG V6 - PARA DIAGNÓSTICO)
+# Arquivo: app/Extractor.py (VERSÃO 8.2 - CORREÇÃO HEADER PRODUTOS UNIVERSAL)
 
 import re
 import fitz  # PyMuPDF
@@ -6,6 +6,8 @@ import spacy
 import json
 from io import BytesIO
 from docx import Document
+from docx.text.paragraph import Paragraph  # Import para leitura ordenada
+from docx.table import Table               # Import para leitura ordenada
 import datetime
 import openpyxl
 from typing import Dict, Any, Optional
@@ -24,41 +26,117 @@ except OSError:
 # SEÇÃO 1: FUNÇÃO PRINCIPAL DE ORQUESTRAÇÃO
 # ==============================================================================
 
-def extrair_dados_do_contrato_por_tipo(pdf_bytes: bytes, tipo_analise: str = 'padrao') -> Optional[Dict[str, Any]]:
-    texto = _extrair_texto_de_pdf_bytes(pdf_bytes)
+def extrair_dados_do_contrato_por_tipo(file_bytes: bytes, tipo_analise: str, file_extension: str) -> Optional[Dict[str, Any]]:
+    """
+    Função principal que o 'contratos/routes.py' chama.
+    Agora lida com .pdf e .docx.
+    """
+    
+    texto = _extrair_texto(file_bytes, file_extension)
+    
     if not texto:
         return None
 
-    if tipo_analise == 'sistema':
-        print("\n" + "*"*30 + " INÍCIO DO TEXTO EXTRAÍDO DO PDF (MODO SISTEMA) " + "*"*30)
-        print(texto.encode('utf-8', errors='ignore').decode('utf-8'))
-        print("*"*30 + " FIM DO TEXTO EXTRAÍDO DO PDF (MODO SISTEMA) " + "*"*30 + "\n")
+    # O print do texto puro agora acontece SEMPRE
+    print("\n" + "*"*30 + f" INÍCIO DO TEXTO EXTRAÍDO ({file_extension}) " + "*"*30)
+    print(texto.encode('utf-8', errors='ignore').decode('utf-8'))
+    print("*"*30 + f" FIM DO TEXTO EXTRAÍDO ({file_extension}) " + "*"*30 + "\n")
     
     if tipo_analise == 'sistema':
         return _extrair_com_regex(texto)
     else:
-        return _extrair_com_nlp(texto)
+        return _extrair_com_nlp(texto) 
 
-def _extrair_texto_de_pdf_bytes(pdf_bytes: bytes) -> Optional[str]:
-    try:
-        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            return "".join(pagina.get_text("text") for pagina in doc)
-    except Exception as e:
-        print(f"[ERRO] Falha ao extrair texto do PDF a partir dos bytes: {e}")
+def _extrair_texto(file_bytes: bytes, file_extension: str) -> Optional[str]:
+    """
+    (VERSÃO 7.1 - CORRIGIDA DOCX)
+    Decide qual biblioteca usar (PyMuPDF ou python-docx)
+    baseado na extensão do arquivo.
+    """
+    
+    # Lógica para PDF (Inalterada)
+    if file_extension == '.pdf':
+        print("[INFO] Detectado .pdf, usando PyMuPDF (fitz) para extrair texto.")
+        try:
+            with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+                return "".join(pagina.get_text("text") for pagina in doc)
+        except Exception as e:
+            print(f"[ERRO] Falha ao extrair texto do PDF: {e}")
+            return None
+    
+    # Lógica para DOCX (Totalmente Corrigida)
+    elif file_extension == '.docx':
+        print("[INFO] Detectado .docx, usando python-docx para extrair texto.")
+        try:
+            texto_completo = ""
+            doc_stream = BytesIO(file_bytes)
+            document = Document(doc_stream)
+            
+            # --- INÍCIO DA CORREÇÃO ---
+
+            # 1. Iterar sobre CABEÇALHOS primeiro
+            print("[INFO-DOCX] Lendo cabeçalhos...")
+            for section in document.sections:
+                if section.header:
+                    for p in section.header.paragraphs:
+                        texto_completo += p.text + "\n"
+                    for table in section.header.tables:
+                        for row in table.rows:
+                            for cell in row.cells:
+                                texto_completo += cell.text + "\n"
+            
+            # 2. Iterar sobre o CORPO do documento (parágrafos e tabelas)
+            # Esta é a forma correta de ler o corpo MANTENDO A ORDEM
+            print("[INFO-DOCX] Lendo corpo do documento (parágrafos e tabelas) em ordem...")
+            
+            for block in document.element.body:
+                if block.tag.endswith('p'):
+                    p = Paragraph(block, document)
+                    texto_completo += p.text + "\n"
+                
+                elif block.tag.endswith('tbl'):
+                    table = Table(block, document)
+                    for row in table.rows:
+                        for cell in row.cells:
+                            texto_completo += cell.text + "\n"
+            
+            # 3. Iterar sobre RODAPÉS
+            print("[INFO-DOCX] Lendo rodapés...")
+            for section in document.sections:
+                if section.footer:
+                    for p in section.footer.paragraphs:
+                        texto_completo += p.text + "\n"
+                    for table in section.footer.tables:
+                        for row in table.rows:
+                            for cell in row.cells:
+                                texto_completo += cell.text + "\n"
+            
+            # --- FIM DA CORREÇÃO ---
+            
+            return texto_completo
+        
+        except Exception as e:
+            print(f"[ERRO] Falha ao extrair texto do DOCX: {e}")
+            return None
+    
+    else:
+        print(f"[ERRO] Formato de arquivo não suportado: {file_extension}")
         return None
 
+
 # ==============================================================================
-# SEÇÃO 2: NOSSAS DUAS ESTRATÉGIAS DE EXTRAÇÃO
+# SEÇÃO 2: NOSSAS DUAS ESTRATÉGIA DE EXTRAÇÃO
 # ==============================================================================
 
-# --- ESTRATÉGIA 1: REGEX (MODO DEBUG V6) ---
+# --- ESTRATÉGIA 1: REGEX PERFEITAS (Botão Verde - "Modo Sistema") ---
 
 def _extrair_com_regex(texto: str) -> Dict[str, Any]:
     """
-    [VERSÃO DE DEBUG V6] - Corrigindo a Regex principal para aceitar
-    hífen (-) ou travessão (–).
+    (VERSÃO 8.2 - CORREÇÃO HEADER PRODUTOS UNIVERSAL)
+    Usa Regex de alta precisão + "Máquina de Estados" para a tabela.
+    Agora funciona com PDF (lista e tabela) e DOCX (tabela).
     """
-    print("\n" + "="*20 + " INÍCIO DO DEBUG DA REGEX (V6) " + "="*20)
+    print("[INFO] Executando extração com REGEX DE PRECISÃO (Modo Sistema)...")
     
     flags = re.DOTALL | re.IGNORECASE
     dados = {
@@ -68,138 +146,227 @@ def _extrair_com_regex(texto: str) -> Dict[str, Any]:
         "Responsavel": "N/A", "Como nos conheceu": "N/A"
     }
 
-    # (Contratante - pulado para focar no bug)
-    bloco_contratante_sistema = re.search(r"CONTRATANTE:\s*Sr\(a\)([\s\S]*?)CONTRATADO:", texto, flags)
+    # CONTRATANTE (V8.1)
+    bloco_contratante_sistema = re.search(r"CONTRATANTE:\s*Sr\(a\)([\s\S]*?)CONTRATADO:?\s", texto, flags)
     if bloco_contratante_sistema:
+        print("[INFO-Regex] Bloco 'Contratante' encontrado.")
         texto_contratante = bloco_contratante_sistema.group(1)
-        dados["Contratante"]["Nome"] = (m.group(1).strip() if (m := re.search(r"^\s*(.*?),\s*brasileiro", texto_contratante, flags)) else "N/A")
-        # (Restante do Contratante omitido para focar no bug)
-
-    # --- DEBUG DA EXTRAÇÃO DE PRODUTOS ---
-    
-    # --- A MUDANÇA (V6) ESTÁ AQUI ---
-    # A Regex agora usa [–-] (um travessão OU um hífen) para ser mais robusta
-    # e removemos o IGNORECASE do 'TOTAL' para que ele pegue o footer (maiúsculo)
-    # e não o header (minúsculo).
-    bloco_produtos_sistema = re.search(r'CLÁUSULA 1 [–-] PRODUTOS CONTRATADOS([\s\S]*?)TOTAL\s', texto, re.DOTALL) 
-    
-    if not bloco_produtos_sistema:
-        print("[DEBUG-FALHA V6] A Regex principal falhou. Não encontrou o bloco entre 'CLÁUSULA 1' e 'TOTAL' (maiúsculo).")
-        print("="*20 + " FIM DO DEBUG (V6) " + "="*20 + "\n")
-        return dados
-    
-    print("[DEBUG-SUCESSO V6] Bloco 'Produtos' (Modo Sistema) encontrado.")
-    texto_produtos = bloco_produtos_sistema.group(1)
-    
-    texto_produtos_sem_header = texto_produtos
-    try:
-        # Usamos rindex para achar o *último* 'Total' (o do header)
-        data_start_index = texto_produtos.rindex('Total')
-        texto_produtos_sem_header = texto_produtos[data_start_index + len('Total'):]
-        print("[DEBUG-INFO V6] Header 'Total' removido com sucesso.")
-    except ValueError:
-        print("[DEBUG-AVISO V6] Header 'Total' não foi encontrado na tabela de produtos.")
-
-    print(f"[DEBUG-TEXTO-BRUTO V6] O texto que será processado é: {repr(texto_produtos_sem_header)}")
-
-    linhas = texto_produtos_sem_header.split('\n')
-    linhas_limpas = [linha.strip() for linha in linhas if linha.strip()]
-    
-    print(f"[DEBUG-LINHAS V6] O texto foi dividido nestas linhas: {linhas_limpas}")
-
-    produtos_lista = []
-    
-    # Regex para checar se uma linha é um PREÇO (deve conter vírgula ou ponto decimal)
-    is_price_regex = r'[\d.,]+[.,]\d+' 
-    
-    produto_atual = {}
-    print("\n--- INICIANDO LOOP DA MÁQUINA DE ESTADOS (V6) ---")
-
-    for i, linha in enumerate(linhas_limpas):
-        print(f"\n[DEBUG-LOOP V6] Processando Linha {i}: {repr(linha)}")
-        print(f"[DEBUG-LOOP V6] Produto atual: {produto_atual}")
-
-        # ESTADO 1: Procurando uma Quantidade (produto_atual está vazio)
-        if not produto_atual:
-            if linha.isdigit():
-                produto_atual['Quantidade'] = linha
-                print(f"[DEBUG-LOOP V6] ESTADO 1: 'Quantidade' encontrada -> {linha}")
-            else:
-                print(f"[DEBUG-LOOP V6] ESTADO 1: Ignorando lixo (não é Qtd): {repr(linha)}")
-            continue 
-
-        # ESTADO 2: Procurando um Nome de Produto
-        if 'Produto' not in produto_atual:
-            produto_atual['Produto'] = linha
-            print(f"[DEBUG-LOOP V6] ESTADO 2: 'Produto' encontrado -> {linha}")
-            continue
-
-        # ESTADO 3: Procurando um Valor Unitário
-        if 'Valor Unitário' not in produto_atual:
-            eh_preco = re.match(is_price_regex, linha)
-            if eh_preco:
-                produto_atual['Valor Unitário'] = linha
-                print(f"[DEBUG-LOOP V6] ESTADO 3: 'Valor Unitário' encontrado -> {linha}")
-            else:
-                produto_atual['Valor Unitário'] = 'N/A'
-                produto_atual['Valor Total Item'] = 'N/A'
-                print(f"[DEBUG-LOOP V6] ESTADO 3: (NÃO É PREÇO) Item de 2 colunas salvo: {produto_atual}")
-                produtos_lista.append(produto_atual)
-                
-                if linha.isdigit():
-                    produto_atual = {'Quantidade': linha}
-                    print(f"[DEBUG-LOOP V6] ESTADO 3: Começando NOVO item com Qtd: {linha}")
-                else:
-                    produto_atual = {} 
-                    print(f"[DEBUG-LOOP V6] ESTADO 3: Linha não é Qtd. Resetando.")
-            continue
-
-        # ESTADO 4: Procurando um Valor Total
-        if 'Valor Total Item' not in produto_atual:
-            produto_atual['Valor Total Item'] = linha
-            print(f"[DEBUG-LOOP V6] ESTADO 4: 'Valor Total Item' encontrado -> {linha}")
-            print(f"[DEBUG-LOOP V6] ESTADO 4: Item de 4 colunas salvo: {produto_atual}")
-            produtos_lista.append(produto_atual)
-            produto_atual = {} 
-            continue
-    
-    print("\n--- FIM DO LOOP (V6) ---")
-
-    if produto_atual and 'Produto' in produto_atual:
-        produto_atual.setdefault('Valor Unitário', 'N/A')
-        produto_atual.setdefault('Valor Total Item', 'N/A')
-        print(f"[DEBUG-FINAL V6] Salvando último item (2 col): {produto_atual}")
-        produtos_lista.append(produto_atual)
-
-    if produtos_lista:
-        print(f"[DEBUG-SUCESSO V6] Produtos encontrados: {len(produtos_lista)}")
-        dados["produtosContratadosJson"] = json.dumps(produtos_lista, ensure_ascii=False)
+        
+        dados["Contratante"]["Nome"] = (m.group(1).strip() if (m := re.search(r"^\s*(.*?)\s*,", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["RG"] = (m.group(1).strip() if (m := re.search(r"RG:\s*([\d.\s—-]+?)\s*e\s*CPF:", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["CPF"] = (m.group(1).strip() if (m := re.search(r"CPF:\s*([\d.\s-]+?),", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["Endereco"] = (m.group(1).strip() if (m := re.search(r"domiciliado\(a\) na\s*(.*?)\s*[–-]\s*Tel\.", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["Telefone"] = (m.group(1).strip() if (m := re.search(r"Tel\.\s*([\d\(\)\s.ou/-]+)\.", texto_contratante, flags)) else "N/A") 
+        dados["Contratante"]["Email"] = (m.group(1).strip() if (m := re.search(r"E-\s*mail:\s*([\w.%+-]+@[\w.-]+\.[a-zA-Z]{2,})", texto_contratante, flags)) else "N/A")
     else:
-        print("[DEBUG-FALHA V6] Loop terminou, mas 'produtos_lista' está VAZIA.")
+        print("[AVISO-Regex] Bloco 'Contratante' não encontrado.")
+
     
-    # (Restante da função)
-    valor_total_sistema = re.search(r"TOTAL\s*([\d.,]+)", texto, flags)
-    if valor_total_sistema:
-        dados["Valor_Total_do_Pedido"] = valor_total_sistema.group(1).strip()
+    # VALOR TOTAL (V8.1)
+    print("[INFO-Regex] Procurando Valor Total...")
+    valor_total_match = re.search(r"O valor total de (?:R\$\s*)?([\d.,]+)", texto, flags)
+    if not valor_total_match:
+        print("[INFO-Regex] Valor Total (Padrão 1) falhou. Tentando Padrão 2 (Tabela: Total 500,00)...")
+        valor_total_match = re.search(r"\nTOTAL\s+(?:R\$\s*)?([\d.,]+)", texto, flags) 
+    if not valor_total_match:
+        print("[INFO-Regex] Valor Total (Padrão 2) falhou. Tentando Padrão 3 (TOTAL: R$ 76.00)...")
+        valor_total_match = re.search(r"TOTAL:\s+R\$\s+([\d.,]+)", texto, flags)
     
-    bloco_pagamento_sistema = re.search(r"foram\s+pagos\s+no\s+dia\s+([\d/]+)\s+(.*?)\.", texto, flags)
+    if valor_total_match:
+        dados["Valor_Total_do_Pedido"] = valor_total_match.group(1).strip()
+        print(f"[INFO-Regex] Valor Total encontrado: {dados['Valor_Total_do_Pedido']}")
+    else:
+        print("[AVISO-Regex] Valor Total não encontrado.")
+
+
+    # PRODUTOS (V8.2 - CORREÇÃO DA LÓGICA DO HEADER)
+    print("[INFO-Regex] Tentando Padrão 1 (CLÁUSULA 1 -> CLÁUSULA 2)...")
+    bloco_produtos_sistema = re.search(r'CLÁUSULA 1 [–-] PRODUTOS CONTRATADOS([\s\S]*?)CLÁUSULA 2', texto, flags)
+    
+    produtos_lista = []
+    texto_produtos_sem_header = ""
+
+    if bloco_produtos_sistema:
+        print("[INFO-Regex] Bloco 'Produtos' encontrado.")
+        texto_produtos = bloco_produtos_sistema.group(1) 
+        
+        # --- INÍCIO DA CORREÇÃO V8.2 ---
+        try:
+            # Procurar pela string "Valor Total", case-insensitive, para achar o header
+            header_find_str = 'Valor Total'
+            # .lower() em ambos para garantir que a busca seja case-insensitive
+            data_start_index = texto_produtos.lower().index(header_find_str.lower())
+            
+            # Pega o texto DEPOIS do header
+            texto_produtos_sem_header = texto_produtos[data_start_index + len(header_find_str):]
+            print("[INFO-Regex] Header 'Valor Total' (Tabela) removido com sucesso.")
+        except ValueError:
+            texto_produtos_sem_header = texto_produtos.strip() # Remove espaço em branco
+            print("[INFO-Regex] Header 'Valor Total' (Tabela) não encontrado. Usando texto puro (provavelmente formato Lista).")
+        # --- FIM DA CORREÇÃO V8.2 ---
+
+        # --- TENTATIVA 1: MÁQUINA DE ESTADOS (V8.1 - Para Tabelas PDF/DOCX) ---
+        print("[INFO-Regex] Tentativa 1: Processando como TABELA (Máquina de Estados V8.1)...")
+        linhas = texto_produtos_sem_header.split('\n')
+        linhas_limpas = [linha.strip() for linha in linhas if linha.strip()]
+        
+        # V8.1: Regex de Preço corrigida. Aceita "R$ 3" e "R$ 18.00" e "62,25"
+        is_just_price_regex = r'^(?:R\$\s*)?[\d.,]+(?:[.,]\d{2})?$' 
+        
+        produto_atual = {}
+        ignore_keywords = ['quanti', 'dade', 'produto', 'valor', 'unitário', 'total', 'desconto']
+
+        for linha in linhas_limpas:
+            
+            if linha.lower() in ignore_keywords:
+                print(f"[INFO-Regex-Tabela] Ignorando linha de header/lixo: '{linha}'")
+                continue
+            
+            if linha.startswith("TOTAL:"):
+                print(f"[INFO-Regex-Tabela] Ignorando linha de Total: '{linha}'")
+                continue
+
+            if linha.isdigit():
+                # É uma Quantidade (ex: '34', '2000', '5', '6', '130')
+                if 'Quantidade' in produto_atual:
+                    produto_atual.setdefault('Valor Unitário', 'N/A')
+                    produto_atual.setdefault('Valor Total Item', 'N/A')
+                    produtos_lista.append(produto_atual)
+                
+                produto_atual = {'Quantidade': linha}
+                print(f"[INFO-Regex-Tabela] Estado 1 (Qtd): {linha}")
+            
+            elif re.match(is_just_price_regex, linha, flags):
+                # É um Preço (ex: 'R$ 3', 'R$ 18.00', '62,25', '3,99')
+                if 'Quantidade' not in produto_atual:
+                    print(f"[INFO-Regex-Tabela] Ignorando preço órfão: '{linha}'")
+                    continue 
+                
+                if 'Valor Unitário' not in produto_atual:
+                    produto_atual['Valor Unitário'] = linha
+                    print(f"[INFO-Regex-Tabela] Estado 3 (V. Uni): {linha}")
+                elif 'Valor Total Item' not in produto_atual:
+                    produto_atual['Valor Total Item'] = linha
+                    print(f"[INFO-Regex-Tabela] Estado 4 (V. Tot): {linha}")
+                    produtos_lista.append(produto_atual)
+                    produto_atual = {} 
+            
+            else:
+                # É um Nome de Produto (ex: 'Hóstias...', 'cANECAS', 'brigadeiro', 'Bem Casado...')
+                if 'Quantidade' not in produto_atual:
+                    print(f"[INFO-Regex-Tabela] Ignorando nome órfão: '{linha}'")
+                    continue 
+                
+                if 'Produto' not in produto_atual:
+                    produto_atual['Produto'] = linha
+                    print(f"[INFO-Regex-Tabela] Estado 2 (Prod): {linha}")
+                else:
+                    produto_atual['Produto'] += " " + linha
+                    print(f"[INFO-Regex-Tabela] Estado 2 (Prod+): {linha}")
+
+        # Salvar o último produto que pode estar incompleto
+        if produto_atual and 'Produto' in produto_atual:
+            print(f"[INFO-Regex-Tabela] Salvando último item incompleto: {produto_atual['Produto']}")
+            produto_atual.setdefault('Valor Unitário', 'N/A')
+            produto_atual.setdefault('Valor Total Item', 'N/A')
+            produtos_lista.append(produto_atual)
+        
+        # --- TENTATIVA 2: PARSER DE LISTA (Para Listas PDF) ---
+        if not produtos_lista: 
+            print("[AVISO-Regex] Máquina de Estados V8.1 falhou. Tentativa 2: Processando como LISTA (Formato PDF)...")
+            texto_lista_corrida = re.sub(r'\s*\n\s*', ' ', texto_produtos_sem_header) 
+            
+            try:
+                matches = re.findall(r"(\d+)\s*x\s(.*?)(?:,|$)", texto_lista_corrida, flags)
+                if matches:
+                    for match in matches:
+                        produto = {
+                            'Quantidade': match[0],
+                            'Produto': match[1].strip(),
+                            'Valor Unitário': 'N/A',
+                            'Valor Total Item': 'N/A'
+                        }
+                        produtos_lista.append(produto)
+                else:
+                    print("[AVISO-Regex] Parser de Lista não encontrou o padrão 'Nx Produto'.")
+            except Exception as e:
+                print(f"[ERRO-Regex] Falha no Parser de Lista: {e}")
+
+        # --- Conclusão dos Produtos ---
+        if produtos_lista:
+            print(f"[INFO-Regex] Produtos encontrados: {len(produtos_lista)}")
+            dados["produtosContratadosJson"] = json.dumps(produtos_lista, ensure_ascii=False)
+        else:
+            print("[AVISO-Regex] Bloco de produtos encontrado, mas nenhum item foi parseado (nem Tabela, nem Lista).")
+            if texto_produtos_sem_header:
+                 print("[INFO-Regex] Salvando texto bruto dos produtos como fallback final.")
+                 dados["produtosContratadosJson"] = json.dumps([{"Quantidade": "N/A", "Produto": texto_produtos_sem_header.strip(), "Valor Unitário": "N/A", "Valor Total Item": "N/A"}], ensure_ascii=False)
+
+    else:
+        print("[AVISO-Regex] Nenhum Padrão (PDF ou DOCX) para a tabela de produtos foi encontrado.")
+
+    # --- FIM DA CORREÇÃO ---
+
+
+    # PAGAMENTO (Corrigido V7.4)
+    bloco_pagamento_sistema = re.search(r"(?:foram|serão)\s+pagos\s+no\s+dia\s+([\d/]+)\s+(.*?)\.", texto, flags)
+    if not bloco_pagamento_sistema:
+        bloco_pagamento_sistema = re.search(r"pagamento no dia\s+([\d/]+)\s+(.*?)\.", texto, flags)
+        
     if bloco_pagamento_sistema:
         dados["Data_de_Pagamento"] = bloco_pagamento_sistema.group(1).strip()
         dados["FormaDePagamento"] = bloco_pagamento_sistema.group(2).strip()
 
-    bloco_evento_sistema = re.search(r"O evento acontecerá no dia:\s*([\d/]+)\s*.\s*Local do evento:\s*(.*?)\n", texto, flags)
-    if bloco_evento_sistema:
-        dados["Data_do_Evento"] = bloco_evento_sistema.group(1).strip()
-        dados["Local_do_Evento"] = bloco_evento_sistema.group(2).strip()
-
-    dados["Como nos conheceu"] = (m.group(1).strip() if (m := re.search(r"Como nos conheceu:\s*(.*?)\n", texto, flags)) else "N/A")
-    dados["Responsavel"] = (m.group(1).strip() if (m := re.search(r"RESPONSÁVEL PELO CONTRATO:\s*(.*?)\s*\n", texto, flags)) else "N/A")
+    # ==============================================================================
+    # --- EVENTO (Corrigido V8.1 - REGEX UNIVERSAL FINAL) ---
+    # ==============================================================================
     
-    print("="*20 + " FIM DO DEBUG (V6) " + "="*20 + "\n")
+    print("[INFO-Regex] Procurando Evento (Padrão Universal V8.1)...")
+    
+    # Padrão Universal V8.1:
+    # 1. Procura a Data
+    # 2. Aceita espaços, pontos, travessões ou hífens [–\s.-]*
+    # 3. Procura o Local
+    # 4. Captura TUDO ([\s\S]*?)
+    # 5. Para (lookahead) quando achar um dos 3 delimitadores universais
+    
+    bloco_evento_sistema = re.search(
+        r"O evento acontecerá no dia:\s*([\d/]+)[\s.–-]*Local do evento\s*[:\s]*([\s\S]*?)"
+        r"(?=CLÁUSULA 12|RESPONSÁVEL PELO CONTRATO|Como nos conheceu:)",
+        texto,
+        flags
+    )
+    
+    if bloco_evento_sistema:
+        print("[INFO-Regex] Padrão 1 (Evento Universal V8.1) funcionou.")
+        dados["Data_do_Evento"] = bloco_evento_sistema.group(1).strip()
+        dados["Local_do_Evento"] = bloco_evento_sistema.group(2).strip().strip(" \n.–-") # Limpa lixo
+    else:
+        print("[AVISO-Regex] Padrão 1 (Evento Universal) falhou. Tentando Padrão 2 (Fallback DO1EVENTO)...")
+        # Padrão 2: O fallback original para o erro de digitação
+        bloco_evento_sistema = re.search(r"CLÁUSULA 11 [–-] DATA E LOCAL DO1?EVENTO([\s\S]*?)CLÁUSULA 12", texto, flags)
+        
+        if bloco_evento_sistema:
+            print("[INFO-Regex] Padrão 2 (Evento - DO1EVENTO) funcionou.")
+            dados["Data_do_Evento"] = (m.group(1).strip() if (m := re.search(r"O evento acontecerá no dia:\s*([\d/]+)", bloco_evento_sistema.group(0), flags)) else "N/A")
+            dados["Local_do_Evento"] = (m.group(1).strip() if (m := re.search(r"Local do evento\s*[:\s]*([\s\S]*?)(?:CLÁUSULA 12|RESPONSÁVEL PELO CONTRATO|Como nos conheceu:)", bloco_evento_sistema.group(0), flags)) else "N/A")
+        else:
+            print("[AVISO-Regex] Nenhum padrão de Evento foi encontrado.")
+
+    # ==============================================================================
+    # --- FIM DA SEÇÃO DE EVENTO ---
+    # ==============================================================================
+
+    # OUTROS (Funciona)
+    dados["Como nos conheceu"] = (m.group(1).strip() if (m := re.search(r"Como nos conheceu:\s*(.*?)\n", texto, flags)) else "N/A")
+    dados["Responsavel"] = (m.group(1).strip() if (m := re.search(r"RESPONSÁVEL PELO CONTRATO:\s*(.*?)\s*(\n|$)", texto, flags)) else "N/A")
+    
+    print("="*20 + " FIM DA EXTRAÇÃO (V8.2) " + "="*20 + "\n")
     return dados
 
 
 # --- ESTRATÉGIA 2: HÍBRIDA (Botão Azul - "Modo Padrão") ---
+# (Esta seção permanece inalterada)
 
 def _extrair_com_nlp(texto: str) -> Dict[str, Any]:
     """
@@ -213,7 +380,7 @@ def _extrair_com_nlp(texto: str) -> Dict[str, Any]:
     print("[INFO] Executando extração HÍBRIDA (Regex-first, NLP-fallback)...")
     
     # --- 1. TENTATIVA COM REGEX PERFEITAS ---
-    dados = _extrair_com_regex(texto) # Chama a função de DEBUG acima
+    dados = _extrair_com_regex(texto) # Chama a função V8.2 acima
 
     # --- 2. FALLBACK PARA NLP (IA) E REGEX GENÉRICAS ---
     print("[INFO-Híbrido] Executando fallback de NLP/IA para campos não encontrados...")
@@ -228,11 +395,11 @@ def _extrair_com_nlp(texto: str) -> Dict[str, Any]:
     if dados["Local_do_Evento"] == "N/A":
         print("[INFO-Híbrido] Fallback: Usando NLP para 'Local'.")
         locais = [ent.text for ent in doc.ents if ent.label_ == "LOC"]
-        if locais: dados["Local_do_Evento"] = locais[0]
+        if locais and "Divinos Doces Finos" not in locais[0]: 
+            dados["Local_do_Evento"] = locais[0]
     
-    # (Restante das Regex de fallback)
     if dados["Contratante"]["CPF"] == "N/A":
-        dados["Contratante"]["CPF"] = (m.group(1) if (m := re.search(r"(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)) else "N/A")
+        dados["Contratante"]["CPF"] = (m.group(1) if (m := re.search(r"(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)) else "N/Y")
     if dados["Contratante"]["Telefone"] == "N/A":
         dados["Contratante"]["Telefone"] = (m.group(1) if (m := re.search(r"(\(?\d{2}\)?\s*\d{4,5}-?\d{4})", texto)) else "N/A")
     if dados["Contratante"]["Email"] == "N/A":
@@ -248,11 +415,12 @@ def _extrair_com_nlp(texto: str) -> Dict[str, Any]:
 # ==============================================================================
 # SEÇÃO 3: GERAÇÃO DE DOCUMENTOS (Inalterado)
 # ==============================================================================
+# (Todas as funções de gerar_contrato_docx, gerar_contrato_pdf_direto,
+# gerar_relatorio_entrega, e exportar_para_excel permanecem 100% iguais)
 
 def gerar_contrato_docx(dados: Dict[str, Any]) -> Optional[BytesIO]:
     try:
         document = Document()
-        # (Resto da função de gerar DOCX - inalterada)
         document.add_heading('Divinos Doces Finos', 0)
         document.add_paragraph('CONTRATO', style='Normal')
         document.add_paragraph()
@@ -310,7 +478,7 @@ def gerar_contrato_docx(dados: Dict[str, Any]) -> Optional[BytesIO]:
         document.add_paragraph('Todos os doces e/ou bem-casados deverão, obrigatoriamente, ser armazenados em geladeira até o momento da montagem da mesa para o evento. Validade 3 a 5 dias em geladeira.')
         document.add_paragraph()
         document.add_heading('CLÁUSULA 9 - LOCAÇÃO (SE HOUVER)', level=1)
-        document.add_paragraph('Caso haja locação de bolo cenográfico, o CONTRATANTE deverá deixar uma caução no valor de R$300,00 ou o valor em dinheiro, como forma de garantia. O bolo cenográfico sendo locado e deverá retornar nas mesmas condições, em até 4 dias após a data da retirada. Na devolução do bolo cenográfico, será devolvido o valor total. Em caso de avarias será cobrado R$ 100,00 por andar (dependendo do modelo) para refazer cada andar danificado. O CONTRATANTE deverá tomar todos os cuidados necessários como: não expor ao calor excessivo, água ou qualquer outro líquido, não deverá apertar, amassar, não deixar convidados colocarem as mãos e deverá ser transportado com cuidado, pegando somente pela base de madeira.')
+        document.add_paragraph('Caso haja locação de bolo cenográfico, o CONTRATANTE deverá deixar uma caução no valor de R$300,00 ou o valor em dinheiro, como forma de garantia. O bolo cenográfico sendo locado e deverá retornar nas mesmas condições, em até 4 dias após a data da retirada. Na devolução do bolo cenográfico, será devolvido o valor total. Em caso de avarias será cobrado R$ 100,00 por andar (dependendo do modelo) para refazer cada andar danificado. O CONTRATANTE deverá tomar todos os cuidados necessários como: não expor ao calor excessivo,  água  ou  qualquer  outro  líquido,  não  deverá  apertar,  amassar,  não  deixar convidados colocarem as mãos e deverá ser transportado com cuidado, pegando somente pela base de madeira.')
         document.add_paragraph()
         document.add_heading('CLÁUSULA 10 - REMARCAÇÃO', level=1)
         document.add_paragraph('Em caso de REMARCAÇÃO de data do evento superior a 6 meses, será cobrado um reequilíbrio econômico e financeiro de 10% sobre o valor do contrato, a cada 6 meses de diferença da data marcada inicialmente.')
@@ -352,7 +520,6 @@ def gerar_contrato_pdf_direto(dados: Dict[str, Any]) -> Optional[BytesIO]:
 def gerar_relatorio_entrega(dados: Dict[str, Any]) -> Optional[BytesIO]:
     try:
         document = Document()
-        # (Resto da função de gerar Relatório - inalterada)
         document.add_heading('RELATÓRIO DE ENTREGA', 0)
         contratante = dados.get('Contratante', {})
         data_evento = dados.get('Data do Evento', dados.get('Data_do_Evento', 'Não informada'))
@@ -395,7 +562,6 @@ def gerar_relatorio_entrega(dados: Dict[str, Any]) -> Optional[BytesIO]:
 def exportar_para_excel(dados: Dict[str, Any]) -> Optional[BytesIO]:
     try:
         workbook = openpyxl.Workbook()
-        # (Resto da função de gerar Excel - inalterada)
         sheet = workbook.active
         sheet.title = "Dados do Contrato"
         sheet['A1'] = "Campo"
@@ -446,7 +612,7 @@ if __name__ == "__main__":
             pdf_bytes_content = f.read()
         
         print("\n--- TESTANDO MODO SISTEMA (REGEX) ---")
-        dados_do_contrato = extrair_dados_do_contrato_por_tipo(pdf_bytes_content, tipo_analise='sistema')
+        dados_do_contrato = extrair_dados_do_contrato_por_tipo(pdf_bytes_content, tipo_analise='sistema', file_extension='.pdf') 
 
     except FileNotFoundError:
         print(f"\n[ERRO] Arquivo de teste '{caminho_do_pdf}' não encontrado. Crie um para testar.")
@@ -475,7 +641,7 @@ if __name__ == "__main__":
                 print(f"    {valor}")
         print("\n----------------------------------------------------")
 
-        nome_excel = f"dados_contrato_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        nome_excel = f"dados_contrato_{datetime.datetime.now().strftime('%Ym%d_%H%M%S')}.xlsx"
         excel_stream = exportar_para_excel(dados_do_contrato)
         if excel_stream:
             with open(nome_excel, 'wb') as f:
@@ -484,7 +650,7 @@ if __name__ == "__main__":
         else:
             print(f"\n[ERRO] Não foi possível gerar a planilha Excel.")
 
-        nome_docx = f"relatorio_entrega_{datetime.datetime.now().strftime('%Y%m%d_%H%S')}.docx"
+        nome_docx = f"relatorio_entrega_{datetime.datetime.now().strftime('%Y%H%S')}.docx"
         docx_stream = gerar_relatorio_entrega(dados_do_contrato)
         if docx_stream:
             with open(nome_docx, 'wb') as f:
