@@ -38,7 +38,6 @@ def create_app():
     absolute_path = os.path.abspath(app.config['UPLOAD_FOLDER'])
     print("pasta de uploads", absolute_path)
 
-
     # --- Registro de Blueprints (lógica mantida do seu projeto padrão) ---
     from app.main_pages.routes import main_pages_bp
     from app.auth.routes import auth_bp

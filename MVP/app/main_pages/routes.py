@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template
-from app.models import Pedido
+from app.models import Pedido # Importação mantida da versão deles
 
 # Este Blueprint servirá todas as suas páginas HTML.
 # Não terá um prefixo de URL para que as rotas sejam simples, ex: /login, /pedidos.
@@ -21,6 +21,11 @@ def new_pedido_page():
     """Rota para a página de criação de um novo pedido."""
     return render_template('novo_pedido.html')
 
+#
+# --- Bloco Mesclado ---
+# Mantivemos a lógica da versão deles (esquerda) 
+# para garantir que o 'pedido' seja enviado ao template.
+#
 @main_pages_bp.route('/pedidos/<pedido_id>')
 def details_pedido_page(pedido_id):
     """Rota para a página de detalhes de um pedido específico."""
@@ -28,6 +33,8 @@ def details_pedido_page(pedido_id):
 
     # O 'pedido_id' pode ser usado pelo JavaScript na página para buscar os dados.
     return render_template( "pedido_detalhes.html", pedido = pedido)
+# --- Fim do Bloco Mesclado ---
+#
 
 @main_pages_bp.route('/contratos')
 def upload_contratos_page():

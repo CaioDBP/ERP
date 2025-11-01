@@ -34,21 +34,18 @@
 </div>
 
 <div class="details-grid" style="margin-top:1rem;">
-    <!-- STATUS & TIMELINE -->
     <div class="card">
         <div class="card-header">
             <h3 class="card-title">Status & Timeline</h3>
         </div>
         <div class="card-body">
             <div class="status-badge-container" id="status-badges">
-                <!-- badge com status atual -->
                 <span id="status-main-badge" class="badge" style="font-size: 1rem; padding: 0.5rem 1rem;">—</span>
                 <div id="proximity-badge-container" style="margin-left: 0.5rem;"></div>
             </div>
 
             <div class="timeline" id="timeline-container" aria-hidden="false">
-                <!-- timeline será montada via JS -->
-            </div>
+                </div>
 
             <div class="responsavel-info" style="margin-top:1rem;">
                 <p><strong>Criado por:</strong> <span id="responsavel-creator">—</span></p>
@@ -57,7 +54,6 @@
         </div>
     </div>
 
-    <!-- INFORMAÇÕES DO CLIENTE -->
     <div class="card">
         <div class="card-header">
             <h3 class="card-title">Informações do Cliente</h3>
@@ -92,7 +88,6 @@
         </div>
     </div>
 
-    <!-- INFORMAÇÕES DO CONTRATADO (NOVO) -->
     <div class="card">
         <div class="card-header">
             <h3 class="card-title">Informações do Contratado</h3>
@@ -123,7 +118,6 @@
         </div>
     </div>
 
-    <!-- DETALHES DO PEDIDO -->
     <div class="card full-width">
         <div class="card-header">
             <h3 class="card-title">Detalhes do Pedido</h3>
@@ -166,7 +160,6 @@
         </div>
     </div>
 
-    <!-- PRODUTOS CONTRATADOS -->
     <div class="card full-width">
         <div class="card-header">
             <h3 class="card-title">Produtos Contratados</h3>
@@ -183,15 +176,13 @@
                         </tr>
                     </thead>
                     <tbody id="produtos-contratados-table-body" class="bg-white divide-y divide-gray-200">
-                        <!-- preenchido por JS -->
-                    </tbody>
+                        </tbody>
                 </table>
                 <p id="no-produtos-contratados-message" class="text-center text-gray-500 mt-4 hidden">Nenhum produto contratado encontrado.</p>
             </div>
         </div>
     </div>
 
-    <!-- HISTÓRICO E UPLOAD (CONGELADOS / PLACEHOLDERS) -->
     <div class="card mt-4">
     <div class="card-header bg-primary text-white">Histórico de Interações</div>
     <div class="card-body">
@@ -207,32 +198,31 @@
 
 
     <div class="card mt-4">
-  <div class="card-header bg-primary text-white">Arquivos do Pedido</div>
-  <div class="card-body">
+    <div class="card-header bg-primary text-white">Arquivos do Pedido</div>
+    <div class="card-body">
     <form id="upload-form" enctype="multipart/form-data">
-      <div class="mb-3">
+        <div class="mb-3">
         <label class="form-label">Selecione o arquivo</label>
         <input type="file" class="form-control" id="arquivo-input" name="file" required>
-      </div>
-      <div class="mb-3">
+        </div>
+        <div class="mb-3">
         <label class="form-label">Legenda</label>
         <input type="text" class="form-control" id="arquivo-legenda" name="legenda" placeholder="Ex: Comprovante de pagamento">
-      </div>
-      <button type="submit" class="btn btn-success">Enviar Arquivo</button>
+        </div>
+        <button type="submit" class="btn btn-success">Enviar Arquivo</button>
     </form>
 
     <hr>
 
     <h6>📂 Arquivos Enviados:</h6>
     <div id="lista-arquivos" class="mt-2">
-      <p class="text-muted">Nenhum arquivo enviado ainda.</p>
+        <p class="text-muted">Nenhum arquivo enviado ainda.</p>
     </div>
-  </div>
+    </div>
 </div>
 
-
 <style>
-/* Mantive seu visual aprovado e acrescentei algumas classes utilitárias usadas pelo JS */
+/* (Estilos CSS da versão deles, mantidos) */
 .details-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -304,9 +294,16 @@
     .details-grid { grid-template-columns: 1fr; }
 }
 .hidden { display: none !important; }
+
+/* (Estilos de info-grid e outros da sua versão que eram idênticos foram omitidos para brevidade) */
+.info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+.info-item label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+.info-item p { font-size: 0.938rem; color: var(--text-primary); }
+.info-item.full-width { grid-column: 1 / -1; }
+@media (max-width: 768px) { .info-grid { grid-template-columns: 1fr; } }
+
 </style>
 
-<!-- ===== JS: integra com /api/pedidos/<id> e popula todas as seções ===== -->
 <script>
 (async function() {
     // utilitários
@@ -389,20 +386,21 @@
     const btnGerarComprovante = document.getElementById('btn-gerar-comprovante');
     const btnCancelar = document.getElementById('btn-cancelar');
 
-    // funções dos botões (mantive comportamento simples / integrando rotas existentes)
+    // funções dos botões
     btnEditar && btnEditar.addEventListener('click', () => {
-        // abre modo edição — vamos reutilizar a página de edição futura; por enquanto, navega para /pedidos/<id>/editar se desejar
+        // (Lógica deles - placeholder)
         window.location.href = `/pedidos/${pedidoId}/editar`;
     });
 
     btnGerarComprovante && btnGerarComprovante.addEventListener('click', async () => {
         const userId = localStorage.getItem('userId');
-        if (!userId) { showModal && showModal('Você precisa estar logado para gerar um comprovante.'); return; }
+        if (!userId) { alert('Você precisa estar logado para gerar um comprovante.'); return; }
         try {
+            // (Esta rota de 'reports' é nova, mas está na lógica deles)
             const resp = await fetch(`/api/reports/generate-delivery-report/${pedidoId}`, { method: 'GET', headers: { 'X-User-Id': userId } });
             if (!resp.ok) {
                 const err = await resp.json().catch(()=>({message:'Erro'}));
-                showModal && showModal('Erro ao gerar comprovante: ' + (err.message || resp.status));
+                alert('Erro ao gerar comprovante: ' + (err.message || resp.status));
                 return;
             }
             const blob = await resp.blob();
@@ -414,25 +412,25 @@
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
-            showModal && showModal('Comprovante gerado. Download iniciado.');
+            alert('Comprovante gerado. Download iniciado.');
         } catch (e) {
             console.error(e);
-            showModal && showModal('Erro de conexão ao gerar comprovante.');
+            alert('Erro de conexão ao gerar comprovante.');
         }
     });
 
     btnCancelar && btnCancelar.addEventListener('click', async () => {
         if (!confirm('Tem certeza que deseja cancelar este pedido?')) return;
         const motivo = prompt('Digite o motivo do cancelamento (opcional):');
-        // por enquanto apenas marca localmente e redireciona — integração real precisa endpoint de cancelamento
-        showModal && showModal('Cancelamento pendente de implementação no backend. Motivo: ' + (motivo || '—'));
+        // (Lógica deles - placeholder)
+        alert('Cancelamento pendente de implementação no backend. Motivo: ' + (motivo || '—'));
     });
 
     // Faz fetch dos dados do pedido e popula a tela
     async function carregarPedido() {
         const userId = localStorage.getItem('userId');
         if (!userId) {
-            showModal && showModal('Usuário não autenticado. Faça login.');
+            alert('Usuário não autenticado. Faça login.');
             return;
         }
 
@@ -445,14 +443,12 @@
             if (!resp.ok) {
                 const err = await resp.json().catch(()=>({message:'Erro'}));
                 console.error('Erro ao carregar pedido:', err);
-                showModal && showModal('Erro: Erro ao carregar dados do pedido');
+                alert('Erro: Erro ao carregar dados do pedido');
                 return;
             }
 
             const pedido = await resp.json();
-            // console.log('Pedido recebido:', pedido);
-
-            // Subtitulo: cliente + data evento (se existir)
+            
             pageSubtitle.innerText = `${pedido.clienteNome || '—'} ${pedido.dataEvento ? '– ' + formatDateDisplay(pedido.dataEvento) : ''}`;
 
             // RESPONSÁVEL / createdAt
@@ -462,7 +458,6 @@
             // STATUS & PROXIMITY
             const st = (pedido.status || 'pendente').toLowerCase();
             statusMainBadge.innerText = st.charAt(0).toUpperCase() + st.slice(1);
-            // color class
             statusMainBadge.className = 'badge';
             if (st === 'confirmado') statusMainBadge.classList.add('badge-success');
             else if (st === 'pendente') statusMainBadge.classList.add('badge-danger');
@@ -470,7 +465,6 @@
             else if (st === 'pronto') statusMainBadge.classList.add('badge-warning');
             else if (st === 'entregue') statusMainBadge.classList.add('badge-success');
 
-            // proximity badge (dias restantes)
             proximityBadgeContainer.innerHTML = '';
             const dias = daysBetweenToday(pedido.dataEvento);
             if (dias !== null) {
@@ -480,7 +474,7 @@
                 proximityBadgeContainer.appendChild(pb);
             }
 
-            // TIMELINE: monta os passos e marca completed/current
+            // TIMELINE
             timelineContainer.innerHTML = ''; // limpa
             const reached = statusToStepIndex(pedido.status);
             const track = document.createElement('div');
@@ -507,7 +501,7 @@
             el('detalhe-cliente-cpf').innerText = pedido.clienteCPF || '—';
             el('detalhe-observacoes-gerais-cliente').innerText = pedido.observacoes || '—';
 
-            // CONTRATADO (novos campos do to_dict)
+            // CONTRATADO
             el('detalhe-nome-contratado').innerText = pedido.nomeContratado || 'Divino Doces Finos';
             el('detalhe-cnpj-contratado').innerText = pedido.cnpjContratado || '—';
             el('detalhe-local-evento').innerText = pedido.localEvento || '—';
@@ -521,10 +515,10 @@
             el('detalhe-horario-retirada').innerText = pedido.horarioRetirada || '—';
             el('detalhe-quantidade').innerText = pedido.quantidade ?? '—';
             el('detalhe-tipo-embalagem').innerText = pedido.tipoEmbalagem || '—';
-            el('detalhe-sabores').innerText = 'Funcionalidade em Manutenção' || '—';
+            el('detalhe-sabores').innerText = pedido.sabores || '—'; // Corrigido
             el('detalhe-observacoes').innerText = pedido.observacoes || '—';
 
-            // PRODUTOS CONTRATADOS - usa produtosContratadosJson se houver
+            // PRODUTOS CONTRATADOS
             const produtosBody = el('produtos-contratados-table-body');
             const noProdutosMsg = el('no-produtos-contratados-message');
             produtosBody.innerHTML = '';
@@ -560,16 +554,15 @@
 
         } catch (err) {
             console.error('Erro de conexão ao buscar pedido:', err);
-            showModal && showModal('Erro de conexão ao carregar detalhes do pedido.');
+            alert('Erro de conexão ao carregar detalhes do pedido.');
         }
     }
 
-    // Logica javascript do historico de interações:(abaixo)
-
+    // (JAVASCRIPT DAS NOVAS FUNCIONALIDADES - VERSÃO DELES)
     async function carregarInteracoes(pedidoId) {
-  try {
+    try {
     const response = await fetch(`/api/pedidos/${pedidoId}/interacoes`, {
-      headers: { 'X-User-Id': localStorage.getItem('userId') }
+        headers: { 'X-User-Id': localStorage.getItem('userId') }
     });
     const interacoes = await response.json();
 
@@ -577,68 +570,61 @@
     container.innerHTML = '';
 
     if (interacoes.length === 0) {
-      container.innerHTML = '<p class="text-muted">Nenhuma interação registrada ainda.</p>';
-      return;
+        container.innerHTML = '<p class="text-muted">Nenhuma interação registrada ainda.</p>';
+        return;
     }
 
     interacoes.forEach(interacao => {
-      const item = document.createElement('div');
-      item.className = 'border rounded p-2 mb-2 bg-light';
-      item.innerHTML = `
+        const item = document.createElement('div');
+        item.className = 'border rounded p-2 mb-2 bg-light';
+        item.innerHTML = `
         <strong>${interacao.autor}</strong><br>
         <small class="text-muted">${interacao.data_interacao}</small><br>
         <p class="mb-0">${interacao.mensagem}</p>
-      `;
-      container.appendChild(item);
+        `;
+        container.appendChild(item);
     });
-  } catch (error) {
+    } catch (error) {
     console.error('Erro ao carregar interações:', error);
-  }
+    }
 }
 
 async function adicionarInteracao(pedidoId) {
-  const mensagem = document.getElementById('nova-interacao').value.trim();
-  if (!mensagem) return alert('Digite uma mensagem antes de enviar.');
+    const mensagem = document.getElementById('nova-interacao').value.trim();
+    if (!mensagem) return alert('Digite uma mensagem antes de enviar.');
 
-  const data = {
+    const data = {
     autor: localStorage.getItem('userNome') || 'Usuário',
     mensagem: mensagem
-  };
+    };
 
-  try {
+    try {
     const response = await fetch(`/api/pedidos/${pedidoId}/interacoes`, {
-      method: 'POST',
-      headers: {
+        method: 'POST',
+        headers: {
         'Content-Type': 'application/json',
         'X-User-Id': localStorage.getItem('userId')
-      },
-      body: JSON.stringify(data)
+        },
+        body: JSON.stringify(data)
     });
 
     const result = await response.json();
     console.log(result);
     document.getElementById('nova-interacao').value = '';
     carregarInteracoes(pedidoId); // Recarrega a lista após adicionar
-  } catch (error) {
+    } catch (error) {
     console.error('Erro ao adicionar interação:', error);
-  }
+    }
 }
 
-// associar evento ao botão
 document.getElementById('btn-enviar-interacao').addEventListener('click', () => {
-  const pedidoId = new URLSearchParams(window.location.search).get('id') || window.location.pathname.split('/').pop();
-  adicionarInteracao(pedidoId);
+    adicionarInteracao(pedidoId);
 });
 
-
-    // Logica javascript do historico de interaçoes(acima)
-
-    // Logica de para anexar arquivos: (abaixo)
-
 async function carregarArquivos(pedidoId) {
-  try {
+    try {
     const response = await fetch(`/api/pedidos/${pedidoId}/arquivos`, {
-      headers: { 'X-User-Id': localStorage.getItem('userId') }
+        headers: { 'X-User-Id': localStorage.getItem('userId') }
     });
     const arquivos = await response.json();
 
@@ -646,59 +632,50 @@ async function carregarArquivos(pedidoId) {
     container.innerHTML = '';
 
     if (arquivos.length === 0) {
-      container.innerHTML = '<p class="text-muted">Nenhum arquivo enviado ainda.</p>';
-      return;
+        container.innerHTML = '<p class="text-muted">Nenhum arquivo enviado ainda.</p>';
+        return;
     }
 
     arquivos.forEach(a => {
-        console.log("url:", a.url)
-        console.log("nome", a.nome)
-      const item = document.createElement('div');
-      item.className = 'border rounded p-2 mb-2 bg-light';
-      item.innerHTML = `
+        const item = document.createElement('div');
+        item.className = 'border rounded p-2 mb-2 bg-light';
+        item.innerHTML = `
         <strong>${a.nome}</strong> <small class="text-muted">(${a.data_envio})</small><br>
         <p class="mb-1">${a.legenda || ''}</p>
         <a href="${a.url}" target="_blank" class="btn btn-sm btn-outline-primary">Visualizar</a>
-      `;
-      container.appendChild(item);
+        `;
+        container.appendChild(item);
     });
-  } catch (error) {
+    } catch (error) {
     console.error('Erro ao carregar arquivos:', error);
-  }
+    }
 }
 
 document.getElementById('upload-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const pedidoId = new URLSearchParams(window.location.search).get('id') || window.location.pathname.split('/').pop();
-  const formData = new FormData();
-  formData.append('file', document.getElementById('arquivo-input').files[0]);
-  formData.append('legenda', document.getElementById('arquivo-legenda').value);
+    e.preventDefault();
+    const formData = new FormData();
+    formData.append('file', document.getElementById('arquivo-input').files[0]);
+    formData.append('legenda', document.getElementById('arquivo-legenda').value);
 
-  try {
+    try {
     const response = await fetch(`/api/pedidos/${pedidoId}/upload`, {
-      method: 'POST',
-      headers: { 'X-User-Id': localStorage.getItem('userId') },
-      body: formData
+        method: 'POST',
+        headers: { 'X-User-Id': localStorage.getItem('userId') },
+        body: formData
     });
     const result = await response.json();
     alert(result.message);
     carregarArquivos(pedidoId);
     document.getElementById('upload-form').reset();
-  } catch (error) {
+    } catch (error) {
     console.error('Erro ao enviar arquivo:', error);
-  }
+    }
 });
-
-
-
-// logica para anexar arquivos no pedido acima
-
 
     // inicia
     carregarPedido();
     carregarInteracoes(pedidoId);
     carregarArquivos(pedidoId);
-
 
 })();
 </script>

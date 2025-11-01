@@ -1,3 +1,5 @@
+// Arquivo: static/js/pedidos.js (VERSÃO MESCLADA E OTIMIZADA)
+
 const userId = localStorage.getItem("userId");
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -20,18 +22,12 @@ async function carregarPedidos() {
     const dataEvento = document.getElementById("filtroData").value; // YYYY-MM-DD from input
     const status = document.getElementById("filtroStatus").value;
 
-    // Função utilitária: converte "YYYY-MM-DD" -> "DD/MM/YYYY"
-    const yyyyToDdMmYyyy = (isoDate) => {
-        if (!isoDate) return "";
-        const parts = isoDate.split("-");
-        if (parts.length !== 3) return isoDate;
-        return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    };
+    // --- (Função yyyyToDdMmYyyy removida por ser desnecessária) ---
 
     // --- Monta URL com parâmetros
     const params = new URLSearchParams();
     if (cliente) params.append("cliente", cliente);
-    if (dataEvento) params.append("dataEvento", dataEvento);
+    if (dataEvento) params.append("dataEvento", dataEvento); // A API agora entende YYYY-MM-DD
     if (status) params.append("status", status);
 
     try {
@@ -46,33 +42,11 @@ async function carregarPedidos() {
         if (!response.ok) throw new Error(`Erro na resposta da API: ${response.status}`);
         let pedidos = await response.json();
 
-        // Se veio vazio e havia filtro de data, tenta o fallback com DD/MM/YYYY
-        if ((Array.isArray(pedidos) && pedidos.length === 0) && dataEvento) {
-            const altParams = new URLSearchParams();
-            if (cliente) altParams.append("cliente", cliente);
-            altParams.append("dataEvento", yyyyToDdMmYyyy(dataEvento));
-            if (status) altParams.append("status", status);
-
-            console.log("Nenhum resultado. Tentando fallback com formato DD/MM/YYYY:", altParams.toString());
-            const altResp = await fetch(`/api/pedidos?${altParams.toString()}`, {
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-User-Id": userId
-                }
-            });
-
-            if (altResp.ok) {
-                const altPedidos = await altResp.json();
-                if (Array.isArray(altPedidos) && altPedidos.length > 0) {
-                    console.log("Fallback retornou resultados.");
-                    pedidos = altPedidos;
-                } else {
-                    console.log("Fallback não retornou resultados.");
-                }
-            } else {
-                console.warn("Fallback retornou erro:", altResp.status);
-            }
-        }
+        //
+        // --- (BLOCO DE FALLBACK DE DATA REMOVIDO) ---
+        // A API em pedidos/routes.py foi corrigida e não precisa mais
+        // que o frontend tente enviar a data em dois formatos.
+        //
 
         if (!Array.isArray(pedidos) || pedidos.length === 0) {
             tbody.innerHTML = `<tr><td colspan="9" class="text-center">Nenhum pedido encontrado.</td></tr>`;
@@ -87,6 +61,9 @@ async function carregarPedidos() {
             const row = document.createElement("tr");
             row.classList.add("align-middle");
 
+            //
+            // --- (HTML do botão da Versão Deles - Esquerda - foi mantido) ---
+            //
             row.innerHTML = `
                 <td>${pedido.id}</td>
                 <td>${pedido.clienteNome || "-"}</td>
@@ -97,8 +74,8 @@ async function carregarPedidos() {
                 <td><span class="badge ${pedido.prioridade === 'alta' || pedido.prioridade === 'urgente' ? 'badge-danger' : 'badge-secondary'}">${prioridadeCapitalizada}</span></td>
                 <td>${responsavel}</td>
                 <td class="text-center">
-                    <button  class=" btn btn-sm btn-outline-primary btn-detalhes me-2" title="Ver detalhes">
-                        <a href="/pedidos/${pedido.id}" class="  btn-sm ">
+                    <button class=" btn btn-sm btn-outline-primary btn-detalhes me-2" title="Ver detalhes">
+                        <a href="/pedidos/${pedido.id}" class="   btn-sm ">
                         <i class="fas fa-eye" style="color: black;"></i>
                     </button>
                     <button class="btn btn-sm btn-outline-success btn-confirmar me-2" title="Confirmar pedido">
@@ -110,8 +87,7 @@ async function carregarPedidos() {
                 </td>
                 `;
 
-
-            // Listeners confirmar/excluir
+            // (Lógica de confirmar/excluir é idêntica em ambos e foi mantida)
             row.querySelector(".btn-confirmar").addEventListener("click", async () => {
                 if (!confirm("Deseja confirmar este pedido?")) return;
                 try {

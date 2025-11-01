@@ -1,379 +1,395 @@
+# Arquivo: app/Extractor.py (VERSÃO MESCLADA E FINAL)
+
+"""
+Módulo central para extração de dados e geração de documentos.
+"""
+
 import re
-import PyPDF2
-import openpyxl
+import fitz  # Sua versão (substitui PyPDF2)
+import spacy # Sua versão (novo)
+import json  # Sua versão (novo)
 from io import BytesIO
-from docx import Document # Importa a biblioteca para trabalhar com .docx
-from docx.shared import Inches # Para unidades de medida em .docx
-import datetime # Para manipulação de datas
+from docx import Document
+import datetime
+import openpyxl
+from typing import Dict, Any, Optional
+from flask import render_template
+from weasyprint import HTML
+
+# (Seu bloco de carregamento do spaCy)
+try:
+    nlp = spacy.load("pt_core_news_md")
+    print("[INFO] Modelo de NLP (pt_core_news_md) carregado com sucesso.")
+except OSError:
+    print("[AVISO] Modelo 'pt_core_news_md' não foi encontrado. Execute: python -m spacy download pt_core_news_md")
+    nlp = None
 
 # ==============================================================================
-# FUNÇÃO 1: Extrai o texto bruto do PDF
+# SEÇÃO 1: EXTRAÇÃO DE DADOS (Suas funções)
 # ==============================================================================
-def extrair_texto_de_pdf(caminho_do_pdf):
-    """
-    Extrai o texto de todas as páginas de um arquivo PDF.
-    """
-    texto_completo = ""
+
+def extrair_dados_do_contrato_por_tipo(pdf_bytes: bytes, tipo_analise: str = 'padrao') -> Optional[Dict[str, Any]]:
+    """Função principal que gerencia a extração, usando sua lógica."""
+    texto = _extrair_texto_de_pdf_bytes(pdf_bytes)
+    if not texto:
+        return None
+
+    if tipo_analise == 'sistema':
+        print("\n" + "*"*30 + " INÍCIO DO TEXTO EXTRAÍDO DO PDF (MODO SISTEMA) " + "*"*30)
+        print(texto.encode('utf-8', errors='ignore').decode('utf-8'))
+        print("*"*30 + " FIM DO TEXTO EXTRAÍDO DO PDF (MODO SISTEMA) " + "*"*30 + "\n")
+    
+    if tipo_analise == 'sistema':
+        return _extrair_com_regex(texto)
+    else:
+        return _extrair_com_nlp(texto)
+
+def _extrair_texto_de_pdf_bytes(pdf_bytes: bytes) -> Optional[str]:
+    """Sua função de extração com PyMuPDF (fitz), que substitui a deles."""
     try:
-        with open(caminho_do_pdf, 'rb') as arquivo:
-            leitor_pdf = PyPDF2.PdfReader(arquivo)
-            for pagina in leitor_pdf.pages:
-                texto_completo += pagina.extract_text() + "\n"
-    except FileNotFoundError:
-        print(f"ERRO: Arquivo não encontrado em '{caminho_do_pdf}'. Verifique o caminho.")
-        return None
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            return "".join(pagina.get_text("text") for pagina in doc)
     except Exception as e:
-        print(f"Ocorreu um erro inesperado ao ler o PDF: {e}")
+        print(f"[ERRO] Falha ao extrair texto do PDF a partir dos bytes: {e}")
         return None
-    return texto_completo
 
-# ==============================================================================
-# FUNÇÃO 2: Extrai os dados específicos do texto
-# ==============================================================================
-def extrair_dados_do_contrato(texto_do_contrato):
-    """
-    Extrai dados específicos do conteúdo textual de um contrato.
-    """
-    dados_extraidos = {}
+def _extrair_com_regex(texto: str) -> Dict[str, Any]:
+    """Sua função de extração com Regex, muito mais robusta."""
     flags = re.DOTALL | re.IGNORECASE
+    dados = {
+        "Contratante": {"Nome": "N/A", "CPF": "N/A", "Telefone": "N/A", "Email": "N/A", "RG": "N/A", "Endereco": "N/A"},
+        "Data_do_Evento": "N/A", "Local_do_Evento": "N/A", "produtosContratadosJson": "[]",
+        "Data_de_Pagamento": "N/A", "Valor_Total_do_Pedido": "N/A", "FormaDePagamento": "N/A",
+        "Responsavel": "N/A", "Como nos conheceu": "N/A"
+    }
 
-    # 1. Extrair dados do CONTRATANTE
-    contratante_match = re.search(
-        r"CONTRATANTE\s*:\s*Sr\(a\)\s*(.*?),\s*brasileiro\(a\).*?RG:\s*([\d.\s-]+?)\s*e\s*CPF:\s*([\d.\s-]+?),",
-        texto_do_contrato, flags)
-    if contratante_match:
-        dados_extraidos['Contratante'] = {'Nome': contratante_match.group(1).strip(), 'RG': contratante_match.group(2).strip(), 'CPF': contratante_match.group(3).strip(),}
-    else:
-        dados_extraidos['Contratante'] = "Não encontrado"
+    bloco_contratante = re.search(r"CONTRATANTE:\s*Sr\(a\)([\s\S]*?)CONTRATADO:", texto, flags)
+    if bloco_contratante:
+        texto_contratante = bloco_contratante.group(1)
+        dados["Contratante"]["Nome"] = (m.group(1).strip() if (m := re.search(r"^\s*(.*?),\s*brasileiro", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["RG"] = (m.group(1).strip() if (m := re.search(r"RG:\s*([\d.\s-]+?)\s*e", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["CPF"] = (m.group(1).strip() if (m := re.search(r"CPF:\s*([\d.\s-]+?),", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["Endereco"] = (m.group(1).strip() if (m := re.search(r"domiciliado\(a\) na\s*(.*?)\s*-\s*Tel\.", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["Telefone"] = (m.group(1).strip() if (m := re.search(r"Tel\.\s*([\d\(\)\s-]+?)\.", texto_contratante, flags)) else "N/A")
+        dados["Contratante"]["Email"] = (m.group(1).strip() if (m := re.search(r"E-\s*mail:\s*([\w.%+-]+@[\w.-]+\.[a-zA-Z]{2,})", texto_contratante, flags)) else "N/A")
 
-    # 2. Extrair dados do CONTRATADO
-    contratado_match = re.search(
-        r"CONTRATADO\s*(.*?),\s*inscrito\s*sob\s*o\s*CNPJ:\s*([\d./\s-]+?),",
-        texto_do_contrato, flags)
-    if contratado_match:
-        dados_extraidos['Contratado'] = {'Nome Empresa': contratado_match.group(1).strip(), 'CNPJ': contratado_match.group(2).strip(),}
-    else:
-        dados_extraidos['Contratado'] = "Não encontrado"
-
-    # 3. Extrair Produtos Contratados
-    dados_extraidos['Produtos Contratados'] = []
-    secao_produtos_match = re.search(r'PRODUTOS CONTRATADOS\s*(.*?)\s*CLÁUSULA 2', texto_do_contrato, flags)
-    if secao_produtos_match:
-        texto_tabela = secao_produtos_match.group(1)
-        linhas = texto_tabela.strip().split('\n')
-        for linha in linhas:
-            linha_limpa = linha.strip()
-            if not linha_limpa or not linha_limpa[0].isdigit():
-                continue
-            # Ajuste a regex se o formato da tabela for diferente
-            # Ex: (Quantidade) (Produto) (Valor Unitário) (Valor Total Item)
-            produto_match = re.match(r'^\s*(\d+)\s+(.*?)\s+([\d,.]+)\s+([\d,.]+)\s*$', linha_limpa)
-            if produto_match:
-                dados_extraidos['Produtos Contratados'].append({
-                    'Quantidade': produto_match.group(1).strip(),
-                    'Produto': produto_match.group(2).strip().strip(),
-                    'Valor Unitário': produto_match.group(3).strip(),
-                    'Valor Total Item': produto_match.group(4).strip()
-                })
-
-    # 4, 5, 6. Extrair outros dados
-    valor_total_match = re.search(r"O valor total de R\$\s*([\d,.]+)", texto_do_contrato, flags)
-    dados_extraidos['Valor Total do Pedido'] = valor_total_match.group(1).strip() if valor_total_match else "Não encontrado"
-    
-    data_pagamento_match = re.search(r"pagos no dia\s*(\d{2}/\d{2}/\d{4})", texto_do_contrato, flags)
-    dados_extraidos['Data de Pagamento'] = data_pagamento_match.group(1).strip() if data_pagamento_match else "Não encontrada"
-    
-    data_evento_match = re.search(r"O evento acontecerá no dia:\s*([\d/]+)", texto_do_contrato, flags)
-    dados_extraidos['Data do Evento'] = data_evento_match.group(1).strip() if data_evento_match else "Não encontrada"
-    
-    local_evento_match = re.search(r"Local do\s*evento\s*:\s*(.*?)\n", texto_do_contrato, flags)
-    dados_extraidos['Local do Evento'] = local_evento_match.group(1).strip() if local_evento_match else "Não encontrado"
+    bloco_produtos = re.search(r'CLÁUSULA 1 - PRODUTOS CONTRATADOS([\s\S]*?)TOTAL:\s*R\$', texto, flags)
+    if bloco_produtos:
+        texto_produtos = bloco_produtos.group(1)
+        itens = re.findall(r'(\d+)\s+(.*?)\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)', texto_produtos)
+        produtos_lista = []
+        for item in itens:
+            produtos_lista.append({
+                'Quantidade': item[0].strip(),
+                'Produto': item[1].strip(),
+                'Valor Unitário': item[2].strip(),
+                'Valor Total Item': item[3].strip()
+            })
+        if produtos_lista:
+            dados["produtosContratadosJson"] = json.dumps(produtos_lista, ensure_ascii=False)
             
-    return dados_extraidos
-
-# ==============================================================================
-# FUNÇÃO 3: Exporta os dados para um arquivo Excel
-# ==============================================================================
-def exportar_para_excel(dados, nome_do_arquivo="dados_contrato.xlsx"):
-    """
-    Exporta o dicionário de dados extraídos para uma planilha Excel.
-    Esta função é focada em dados de contrato (singular).
-    Para exportar uma LISTA de pedidos, a lógica precisará ser adaptada.
-    """
-    workbook = openpyxl.Workbook()
-    sheet = workbook.active
-    sheet.title = "Dados do Contrato"
-
-    sheet['A1'] = "Campo"
-    sheet['B1'] = "Informação Extraída"
+    dados["Valor_Total_do_Pedido"] = (m.group(1).strip() if (m := re.search(r"TOTAL:\s*(R\$\s*[\d.,]+)", texto, flags)) else "N/A")
     
-    linha_atual = 2
+    # (Sua correção de Regex documentada)
+    bloco_pagamento = re.search(r"foram\s+pagos\s+no\s+dia\s+([\d/]+)\s+(.*?)\.", texto, flags)
+    if bloco_pagamento:
+        dados["Data_de_Pagamento"] = bloco_pagamento.group(1).strip()
+        dados["FormaDePagamento"] = bloco_pagamento.group(2).strip()
+    
+    bloco_evento = re.search(r"O evento acontecerá no dia:\s*([\d/]+)\s*-\s*Local do evento:\s*(.*?)\n", texto, flags)
+    if bloco_evento:
+        dados["Data_do_Evento"] = bloco_evento.group(1).strip()
+        dados["Local_do_Evento"] = bloco_evento.group(2).strip()
 
-    for chave, valor in dados.items():
-        if chave == 'Produtos Contratados':
-            continue
+    dados["Como nos conheceu"] = (m.group(1).strip() if (m := re.search(r"Como nos conheceu:\s*(.*?)\n", texto, flags)) else "N/A")
+    dados["Responsavel"] = (m.group(1).strip() if (m := re.search(r"RESPONSÁVEL PELO CONTRATO:\s*(.*?)\s*\n", texto, flags)) else "N/A")
+    return dados
+
+def _extrair_com_nlp(texto: str) -> Dict[str, Any]:
+    """Sua nova função de extração com NLP."""
+    if not nlp: raise Exception("Modelo de linguagem spaCy não foi carregado.")
+    doc = nlp(texto)
+    dados = {"Contratante": { "Nome": "Não encontrado", "CPF": "N/A", "Telefone": "N/A", "Email": "N/A" }, "Data_do_Evento": "Não encontrado", "Local_do_Evento": "Não encontrado", "produtosContratadosJson": '[]', "Data_de_Pagamento": "Verificar no Doc.", "Valor_Total_do_Pedido": "Não encontrado", "FormaDePagamento": "Verificar no Doc."}
+    pessoas = [ent.text for ent in doc.ents if ent.label_ == "PER"]
+    locais = [ent.text for ent in doc.ents if ent.label_ == "LOC"]
+    if pessoas: dados["Contratante"]["Nome"] = pessoas[0]
+    if locais: dados["Local_do_Evento"] = locais[0]
+    dados["Contratante"]["CPF"] = (m.group(1) if (m := re.search(r"(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)) else "N/A")
+    dados["Contratante"]["Telefone"] = (m.group(1) if (m := re.search(r"(\(?\d{2}\)?\s*\d{4,5}-?\d{4})", texto)) else "N/A")
+    dados["Contratante"]["Email"] = (m.group(1) if (m := re.search(r"([\w.\-]+@[\w.\-]+)", texto)) else "N/A")
+    dados["Valor_Total_do_Pedido"] = (m.group(1) if (m := re.search(r"(?:valor\s*total|preço\s*final)[\s\S]*?(R\$\s*[\d.,]+)", texto, re.IGNORECASE)) else "Não encontrado")
+    dados["Data_do_Evento"] = (m.group(1) if (m := re.search(r"data\s*do\s*evento[:\s]*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE)) else "Não encontrado")
+    return dados
+
+# ==============================================================================
+# SEÇÃO 2: GERAÇÃO DE DOCUMENTOS (Suas funções)
+# ==============================================================================
+
+def gerar_contrato_docx(dados: Dict[str, Any]) -> Optional[BytesIO]:
+    """Sua função de gerar DOCX, que retorna BytesIO."""
+    try:
+        document = Document()
+        # (O código interno é 99% idêntico ao deles, mas o seu é um pouco mais limpo)
+        document.add_heading('Divinos Doces Finos', 0)
+        document.add_paragraph('CONTRATO', style='Normal')
+        document.add_paragraph()
+        contratante = dados.get('Contratante', {})
+        contratante_texto = document.add_paragraph()
+        contratante_texto.add_run('CONTRATANTE: ').bold = True
+        contratante_texto.add_run(f"Sr(a) {contratante.get('Nome', 'N/A')}, brasileiro(a), portador(a) da cédula de RG: {contratante.get('RG', 'N/A')} e CPF: {contratante.get('CPF', 'N/A')}, residente e domiciliado(a) na {contratante.get('Endereco', 'N/A')} - Tel. {contratante.get('Telefone', 'N/A')}.")
+        contratado_texto = document.add_paragraph()
+        contratado_texto.add_run('CONTRATADO: ').bold = True
+        contratado_texto.add_run(f"Divinos Doces Finos, inscrito sob o CNPJ: 18.826.801/0001-76, com sede na Rua Curupacê, 392 Mooca, São Paulo SP representado pela sócia proprietária Damaris Talita Macedo, portador do RG: 30.315.655-7.")
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 1 - PRODUTOS CONTRATADOS', level=1)
         
-        if isinstance(valor, dict):
-            for sub_chave, sub_valor in valor.items():
-                sheet[f'A{linha_atual}'] = f"{chave} - {sub_chave}"
-                sheet[f'B{linha_atual}'] = sub_valor
-                linha_atual += 1
+        # (Precisamos lidar com o fato de que os produtos estão em JSON)
+        produtos = []
+        produtos_json_str = dados.get('produtosContratadosJson', '[]')
+        try:
+            produtos = json.loads(produtos_json_str)
+        except json.JSONDecodeError:
+            print("[AVISO] JSON de produtos inválido ao gerar DOCX.")
+            produtos = dados.get('Produtos Contratados', []) # Fallback para a estrutura antiga
+
+        if produtos:
+            tabela = document.add_table(rows=1, cols=4)
+            tabela.style = 'Table Grid'
+            hdr_cells = tabela.rows[0].cells
+            hdr_cells[0].text, hdr_cells[1].text, hdr_cells[2].text, hdr_cells[3].text = 'Quantidade', 'Produto', 'Valor Unitário', 'Valor Total'
+            for item in produtos:
+                row_cells = tabela.add_row().cells
+                row_cells[0].text, row_cells[1].text, row_cells[2].text, row_cells[3].text = str(item.get('Quantidade', '')), str(item.get('Produto', '')), str(item.get('Valor Unitário', '')), str(item.get('Valor Total Item', ''))
+            document.add_paragraph(f"TOTAL: R$ {dados.get('Valor Total do Pedido', dados.get('Valor_Total_do_Pedido', 'N/A'))}")
         else:
-            sheet[f'A{linha_atual}'] = chave
-            sheet[f'B{linha_atual}'] = valor
-            linha_atual += 1
-
-    # Adiciona a tabela de produtos contratados
-    linha_atual += 2 
-    
-    headers_produtos = list(dados['Produtos Contratados'][0].keys()) if dados.get('Produtos Contratados') and dados['Produtos Contratados'] else []
-    if headers_produtos:
-        for col_idx, header in enumerate(headers_produtos, 1):
-            sheet.cell(row=linha_atual, column=col_idx, value=header)
+            document.add_paragraph("Nenhum produto adicionado.")
+            
+        document.add_heading('CLÁUSULA 2 - VALOR E FORMA DE PAGAMENTO', level=1)
+        document.add_paragraph(f"O valor total de R$ {dados.get('Valor Total do Pedido', dados.get('Valor_Total_do_Pedido', 'N/A'))} referente aos produtos acima citados, foram pagos no dia {dados.get('Data de Pagamento', dados.get('Data_de_Pagamento', 'N/A'))} {dados.get('Forma de Pagamento', dados.get('FormaDePagamento', 'N/A'))}.")
         
-        linha_atual += 1
-
-        for produto in dados['Produtos Contratados']:
-            for col_idx, header in enumerate(headers_produtos, 1):
-                sheet.cell(row=linha_atual, column=col_idx, value=produto.get(header, 'N/A'))
-            linha_atual += 1
-    
-    try:
-        workbook.save(filename=nome_do_arquivo)
-        print(f"\n[SUCESSO] Dados exportados para o arquivo '{nome_do_arquivo}'")
-    except Exception as e:
-        print(f"\n[ERRO] Não foi possível salvar a planilha: {e}")
-
-# ==============================================================================
-# FUNÇÃO 4: Gera o Relatório de Entrega em DOCX (MOVIMENTO DO relatorio_entrega.py)
-# ==============================================================================
-def gerar_relatorio_entrega(dados, nome_arquivo='relatorio_entrega.docx'):
-    """
-    Gera um relatório de entrega em formato .docx com base nos dados do pedido.
-    """
-    document = Document()
-    
-    # Título
-    document.add_heading('RELATÓRIO DE ENTREGA', 0)
-    
-    # Informações principais
-    contratante = dados.get('Contratante', {})
-    data_evento = dados.get('Data do Evento', 'Não informada')
-    local_evento = dados.get('Local do Evento', 'Não informado')
-    
-    document.add_paragraph(f"Nome do Cliente: {contratante.get('Nome', 'Não encontrado')}")
-    document.add_paragraph(f"Data do Evento: {data_evento}")
-    document.add_paragraph(f"Local do Evento: {local_evento}")
-    document.add_paragraph(f"Data de Emissão: {datetime.datetime.now().strftime('%d/%m/%Y')}")
-
-    document.add_paragraph("\nProdutos Contratados:")
-    
-    # Tabela de produtos
-    produtos = dados.get('Produtos Contratados', [])
-    if produtos:
-        tabela = document.add_table(rows=1, cols=4)
-        tabela.style = 'Table Grid'
-        hdr_cells = tabela.rows[0].cells
-        hdr_cells[0].text = 'Quantidade'
-        hdr_cells[1].text = 'Produto'
-        hdr_cells[2].text = 'Valor Unitário'
-        hdr_cells[3].text = 'Valor Total'
-
-        for item in produtos:
-            row_cells = tabela.add_row().cells
-            row_cells[0].text = str(item.get('Quantidade', 'N/A')) # Garante string
-            row_cells[1].text = str(item.get('Produto', 'N/A'))
-            row_cells[2].text = str(item.get('Valor Unitário', 'N/A'))
-            row_cells[3].text = str(item.get('Valor Total Item', 'N/A'))
-    else:
-        document.add_paragraph("Nenhum produto encontrado.")
-
-    document.add_paragraph(f"\nValor Total do Pedido: R$ {dados.get('Valor Total do Pedido', 'Não encontrado')}")
-
-    # Espaço para assinaturas
-    document.add_paragraph("\n\n\nAssinaturas:\n")
-    document.add_paragraph("______________________________\nResponsável pela Entrega")
-    document.add_paragraph("\n\n")
-    document.add_paragraph("______________________________\nResponsável pela Retirada")
-
-    # Salvar o arquivo
-    try:
-        document.save(nome_arquivo)
-        print(f"[OK] Relatório de entrega salvo em: {nome_arquivo}")
-    except Exception as e:
-        print(f"[ERRO] Falha ao salvar relatório de entrega: {e}")
-
-
-# ==============================================================================
-# FUNÇÃO 5: Gera o Contrato completo em DOCX
-# ==============================================================================
-def gerar_contrato_docx(dados, nome_arquivo='contrato.docx'):
-    """
-    Gera um contrato completo em formato .docx com base nos dados do formulário.
-    A função espera um dicionário 'dados' com as seguintes chaves:
-    'Contratante', 'Contratado', 'Data do Evento', 'Local do Evento',
-    'Produtos Contratados', 'Valor Total do Pedido', 'Data de Pagamento', 'Forma de Pagamento',
-    'Como nos conheceu', 'Responsavel'
-    """
-    document = Document()
-    
-    # Adiciona o título e informações fixas do contrato
-    document.add_heading('Divinos Doces Finos', 0)
-    document.add_paragraph('CONTRATO', style='Normal')
-    document.add_paragraph()
-
-    # Informações do Contratante
-    contratante = dados.get('Contratante', {})
-    contratante_texto = document.add_paragraph()
-    contratante_texto.add_run('CONTRATANTE: ').bold = True
-    contratante_texto.add_run(f"Sr(a) {contratante.get('Nome', 'N/A')}, brasileiro(a), portador(a) da cédula de RG: {contratante.get('RG', 'N/A')} e CPF: {contratante.get('CPF', 'N/A')}, residente e domiciliado(a) na {contratante.get('Endereco', 'N/A')} - Tel. {contratante.get('Telefone', 'N/A')}.")
-
-    # Informações do Contratado (Padronizadas)
-    contratado_texto = document.add_paragraph()
-    contratado_texto.add_run('CONTRATADO: ').bold = True
-    contratado_texto.add_run(f"Divinos Doces Finos, inscrito sob o CNPJ: 18.826.801/0001-76, com sede na Rua Curupacê, 392 Mooca, São Paulo SP representado pela sócia proprietária Damaris Talita Macedo, portador do RG: 30.315.655-7.")
-    document.add_paragraph()
-    
-    # CLÁUSULA 1 - PRODUTOS CONTRATADOS
-    document.add_heading('CLÁUSULA 1 - PRODUTOS CONTRATADOS', level=1)
-    
-    produtos = dados.get('Produtos Contratados', [])
-    if produtos:
-        tabela = document.add_table(rows=1, cols=4)
-        tabela.style = 'Table Grid'
-        hdr_cells = tabela.rows[0].cells
-        hdr_cells[0].text = 'Quantidade'
-        hdr_cells[1].text = 'Produto'
-        hdr_cells[2].text = 'Valor Unitário'
-        hdr_cells[3].text = 'Valor Total'
+        # (O resto das cláusulas é texto fixo, idêntico em ambas as versões)
+        document.add_heading('CLÁUSULA 3 - EMBALAGEM DOS DOCES - FORMINHAS', level=1)
+        document.add_paragraph('Os doces finos são entregues em forminhas no formato caixeta, na cor branca, todos decorados e prontos para o consumo. Os brigadeiros serão entregues em forminhas na cor branca nº 5.')
+        document.add_paragraph('Caso o CONTRATANTE opte por embalagens decorativas, o mesmo deverá enviar ao CONTRATADO com no máximo 15 dias de antecedência ao evento, que entregará os doces finos dentro das embalagens decoradas, prontos para o consumo. Após esse prazo não recebemos.')
+        document.add_paragraph('Por haver um manejo especial nas forminhas no modelo de flor e um custo maior de compra de caixas para armazenamento dos doces, é cobrado uma taxa adicional de R$0,10 por unidade, como consta abaixo:')
+        document.add_paragraph('ATÉ 100 DOCES + R$10,00 / ATÉ 200 DOCES + R$20,00 ATÉ 300 DOCES + R$30,00 / ATÉ 400 DOCES + R$40,00 ACIMA DE 500 DOCES + R$50,00 e assim sucessivamente')
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 4 - EMBALAGENS DOS BEM-CASADOS', level=1)
+        document.add_paragraph('Os bem-casados são entregues em papel crepom crepe plus, com celofane e fita de cetim de 7mm, nas cores enviadas na tabela completa. Os papéis perolados da linha especial serão cobrados R$ 0,40 a mais por unidade e os papéis dourado, prata, tiffany e marsala serão cobrados R$ 0,20 a mais por unidade, por se tratar de um papel especial e com maior custo. Tudo está discriminado na tabela de cores.')
+        document.add_paragraph('Caso o CONTRATANTE opte por incluir, medalhinhas, tercinhos, renda, juta, tag ou outro item decorativo, deverá consultar antecipadamente a disponibilidade e todos os itens são colados com cola quente. A entrega dos itens deverá ocorrer com no máximo 15 dias antes do evento. Após esse prazo não recebemos. Por haver um manejo especial dos itens, será cobrado uma taxa adicional de R$0,10, como consta abaixo: ATÉ 100 BEM-CASADOS + R$10,00 / ATÉ 200 BEM-CASADOS + R$20,00 ATÉ 300 BEM-CASADOS + R$30,00 / ATÉ 400 BEM-CASADOS + R$40,00 ACIMA de 500 BEM-CASADOS + R$50,00 e assim sucessivamente')
+        document.add_paragraph('Caso opte pela aplicação de dois ou mais itens, será cobrado o valor de cada item.')
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 5 - ALTERAÇÕES', level=1)
+        document.add_paragraph('Não recebemos forminhas, modificações, alterações em contrato em hipótese alguma na semana do evento.')
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 6 - ADIÇÃO DE NOVOS ITENS', level=1)
+        document.add_paragraph('Caso haja a necessidade do CONTRATANTE adicionar novos itens ao pedido fechado, o valor dos produtos será de acordo com o valor vigente no momento da adição, mesmo que o contrato tenha sido fechado com valores promocionais.')
+        document.add_paragraph('A adição de produtos ocorre de acordo com a disponibilidade de agenda. Não havendo disponibilidade para novos produtos ou pedidos, não será possível a complementação.')
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 7 - RETIRada OU SERVIÇO DE ENTREGA', level=1)
+        document.add_paragraph(f"A entrega ou retirada dos itens acima, deverá ser definida pela CONTRATANTE até 15 dias antes do evento. Em caso de entrega será cobrada taxa de deslocamento de R$ 6,00 por km ou a taxa mínima de R$50,00 (sujeito a disponibilidade na data e horário desejados). Não fazemos entregas aos domingos e feriados. A retirada dos produtos ocorre de segunda-feira à sábado, das 9h às 16h30, mediante agendamento com o setor responsável, não havendo expediente aos domingos e feriados.")
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 8 - ARMAZENAMENTO', level=1)
+        document.add_paragraph('Todos os doces e/ou bem-casados deverão, obrigatoriamente, ser armazenados em geladeira até o momento da montagem da mesa para o evento. Validade 3 a 5 dias em geladeira.')
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 9 - LOCAÇÃO (SE HOUVER)', level=1)
+        document.add_paragraph('Caso haja locação de bolo cenográfico, o CONTRATANTE deverá deixar uma caução no valor de R$300,00 ou o valor em dinheiro, como forma de garantia. O bolo cenográfico sendo locado e deverá retornar nas mesmas condições, em até 4 dias após a data da retirada. Na devolução do bolo cenográfico, será devolvido o valor total. Em caso de avarias será cobrado R$ 100,00 por andar (dependendo do modelo) para refazer cada andar danificado. O CONTRATANTE deverá tomar todos os cuidados necessários como: não expor ao calor excessivo, água ou qualquer outro líquido, não deverá apertar, amassar, não deixar convidados colocarem as mãos e deverá ser transportado com cuidado, pegando somente pela base de madeira.')
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 10 - REMARCAÇÃO', level=1)
+        document.add_paragraph('Em caso de REMARCAÇÃO de data do evento superior a 6 meses, será cobrado um reequilíbrio econômico e financeiro de 10% sobre o valor do contrato, a cada 6 meses de diferença da data marcada inicialmente.')
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 11 - DATA E LOCAL DO EVENTO', level=1)
+        document.add_paragraph(f"O evento acontecerá no dia: {dados.get('Data do Evento', dados.get('Data_do_Evento', 'N/A'))} - Local do evento: {dados.get('Local do Evento', dados.get('Local_do_Evento', 'N/A'))}")
+        document.add_paragraph(f"Como nos conheceu: {dados.get('Como nos conheceu', 'N/A')}")
+        document.add_paragraph()
+        document.add_heading('CLÁUSULA 12 - CANCELAMENTO', level=1)
+        document.add_paragraph('A CONTRATANTE pagará multa de 30% do valor do contrato em caso de cancelamento. O CONTRATADO pagará multa de 100% do valor do contrato em caso de cancelamento.')
+        document.add_paragraph()
+        document.add_paragraph(f"RESPONSÁVEL PELO CONTRATO: {dados.get('Responsavel', 'N/A')}")
+        document.add_paragraph(f"São Paulo, {dados.get('Data de Pagamento', dados.get('Data_de_Pagamento', 'N/A'))}")
+        document.add_paragraph()
+        document.add_paragraph('CONTRATANTE', style='Normal').bold = True
+        document.add_paragraph('______________________________', style='Normal')
+        document.add_paragraph('CONTRATADO', style='Normal').bold = True
+        document.add_paragraph('______________________________', style='Normal')
         
-        for item in produtos:
-            row_cells = tabela.add_row().cells
-            row_cells[0].text = str(item.get('Quantidade', 'N/A'))
-            row_cells[1].text = str(item.get('Produto', 'N/A'))
-            row_cells[2].text = str(item.get('Valor Unitário', 'N/A'))
-            row_cells[3].text = str(item.get('Valor Total Item', 'N/A'))
-        document.add_paragraph(f"TOTAL: R$ {dados.get('Valor Total do Pedido', 'N/A')}")
-    else:
-        document.add_paragraph("Nenhum produto adicionado.")
-
-    # CLÁUSULA 2 - VALOR E FORMA DE PAGAMENTO
-    document.add_heading('CLÁUSULA 2 - VALOR E FORMA DE PAGAMENTO', level=1)
-    document.add_paragraph(f"O valor total de R$ {dados.get('Valor Total do Pedido', 'N/A')} referente aos produtos acima citados, foram pagos no dia {dados.get('Data de Pagamento', 'N/A')} {dados.get('Forma de Pagamento', 'N/A')}.")
-
-    # ... (Adicionar as outras cláusulas de forma fixa, como no seu modelo) ...
-    document.add_heading('CLÁUSULA 3 - EMBALAGEM DOS DOCES - FORMINHAS', level=1)
-    document.add_paragraph('Os doces finos são entregues em forminhas no formato caixeta, na cor branca, todos decorados e prontos para o consumo. Os brigadeiros serão entregues em forminhas na cor branca nº 5.')
-    document.add_paragraph('Caso o CONTRATANTE opte por embalagens decorativas, o mesmo deverá enviar ao CONTRATADO com no máximo 15 dias de antecedência ao evento, que entregará os doces finos dentro das embalagens decoradas, prontos para o consumo. Após esse prazo não recebemos.')
-    document.add_paragraph('Por haver um manejo especial nas forminhas no modelo de flor e um custo maior de compra de caixas para armazenamento dos doces, é cobrado uma taxa adicional de R$0,10 por unidade, como consta abaixo:')
-    document.add_paragraph('ATÉ 100 DOCES + R$10,00 / ATÉ 200 DOCES + R$20,00 ATÉ 300 DOCES + R$30,00 / ATÉ 400 DOCES + R$40,00 ACIMA DE 500 DOCES + R$50,00 e assim sucessivamente')
-    document.add_paragraph()
-
-    # CLÁUSULA 4 - EMBALAGENS DOS BEM-CASADOS
-    document.add_heading('CLÁUSULA 4 - EMBALAGENS DOS BEM-CASADOS', level=1)
-    document.add_paragraph('Os bem-casados são entregues em papel crepom crepe plus, com celofane e fita de cetim de 7mm, nas cores enviadas na tabela completa. Os papéis perolados da linha especial serão cobrados R$ 0,40 a mais por unidade e os papéis dourado, prata, tiffany e marsala serão cobrados R$ 0,20 a mais por unidade, por se tratar de um papel especial e com maior custo. Tudo está discriminado na tabela de cores.')
-    document.add_paragraph('Caso o CONTRATANTE opte por incluir, medalhinhas, tercinhos, renda, juta, tag ou outro item decorativo, deverá consultar antecipadamente a disponibilidade e todos os itens são colados com cola quente. A entrega dos itens deverá ocorrer com no máximo 15 dias antes do evento. Após esse prazo não recebemos. Por haver um manejo especial dos itens, será cobrado uma taxa adicional de R$0,10, como consta abaixo: ATÉ 100 BEM-CASADOS + R$10,00 / ATÉ 200 BEM-CASADOS + R$20,00 ATÉ 300 BEM-CASADOS + R$30,00 / ATÉ 400 BEM-CASADOS + R$40,00 ACIMA DE 500 BEM-CASADOS + R$50,00 e assim sucessivamente')
-    document.add_paragraph('Caso opte pela aplicação de dois ou mais itens, será cobrado o valor de cada item.')
-    document.add_paragraph()
-
-    # CLÁUSULA 5 - ALTERAÇÕES
-    document.add_heading('CLÁUSULA 5 - ALTERAÇÕES', level=1)
-    document.add_paragraph('Não recebemos forminhas, modificações, alterações em contrato em hipótese alguma na semana do evento.')
-    document.add_paragraph()
-    
-    # CLÁUSULA 6 - ADIÇÃO DE NOVOS ITENS
-    document.add_heading('CLÁUSULA 6 - ADIÇÃO DE NOVOS ITENS', level=1)
-    document.add_paragraph('Caso haja a necessidade do CONTRATANTE adicionar novos itens ao pedido fechado, o valor dos produtos será de acordo com o valor vigente no momento da adição, mesmo que o contrato tenha sido fechado com valores promocionais.')
-    document.add_paragraph('A adição de produtos ocorre de acordo com a disponibilidade de agenda. Não havendo disponibilidade para novos produtos ou pedidos, não será possível a complementação.')
-    document.add_paragraph()
-
-    # CLÁUSULA 7 - RETIRADA OU SERVIÇO DE ENTREGA
-    document.add_heading('CLÁUSULA 7 - RETIRADA OU SERVIÇO DE ENTREGA', level=1)
-    document.add_paragraph(f"A entrega ou retirada dos itens acima, deverá ser definida pela CONTRATANTE até 15 dias antes do evento. Em caso de entrega será cobrada taxa de deslocamento de R$ 6,00 por km ou a taxa mínima de R$50,00 (sujeito a disponibilidade na data e horário desejados). Não fazemos entregas aos domingos e feriados. A retirada dos produtos ocorre de segunda-feira à sábado, das 9h às 16h30, mediante agendamento com o setor responsável, não havendo expediente aos domingos e feriados.")
-    document.add_paragraph()
-    
-    # CLÁUSULA 8 - ARMAZENAMENTO
-    document.add_heading('CLÁUSULA 8 - ARMAZENAMENTO', level=1)
-    document.add_paragraph('Todos os doces e/ou bem-casados deverão, obrigatoriamente, ser armazenados em geladeira até o momento da montagem da mesa para o evento. Validade 3 a 5 dias em geladeira.')
-    document.add_paragraph()
-
-    # CLÁUSULA 9 - LOCAÇÃO (SE HOUVER)
-    document.add_heading('CLÁUSULA 9 - LOCAÇÃO (SE HOUVER)', level=1)
-    document.add_paragraph('Caso haja locação de bolo cenográfico, o CONTRATANTE deverá deixar uma caução no valor de R$300,00 ou o valor em dinheiro, como forma de garantia. O bolo cenográfico sendo locado e deverá retornar nas mesmas condições, em até 4 dias após a data da retirada. Na devolução do bolo cenográfico, será devolvido o valor total. Em caso de avarias será cobrado R$ 100,00 por andar (dependendo do modelo) para refazer cada andar danificado. O CONTRATANTE deverá tomar todos os cuidados necessários como: não expor ao calor excessivo, água ou qualquer outro líquido, não deverá apertar, amassar, não deixar convidados colocarem as mãos e deverá ser transportado com cuidado, pegando somente pela base de madeira.')
-    document.add_paragraph()
-
-    # CLÁUSULA 10 - REMARCAÇÃO
-    document.add_heading('CLÁUSULA 10 - REMARCAÇÃO', level=1)
-    document.add_paragraph('Em caso de REMARCAÇÃO de data do evento superior a 6 meses, será cobrado um reequilíbrio econômico e financeiro de 10% sobre o valor do contrato, a cada 6 meses de diferença da data marcada inicialmente.')
-    document.add_paragraph()
-
-    # CLÁUSULA 11 DATA E LOCAL DO EVENTO
-    document.add_heading('CLÁUSULA 11 - DATA E LOCAL DO EVENTO', level=1)
-    document.add_paragraph(f"O evento acontecerá no dia: {dados.get('Data do Evento', 'N/A')} - Local do evento: {dados.get('Local do Evento', 'N/A')}")
-    document.add_paragraph(f"Como nos conheceu: {dados.get('Como nos conheceu', 'N/A')}")
-    document.add_paragraph()
-
-    # CLÁUSULA 12 - CANCELAMENTO
-    document.add_heading('CLÁUSULA 12 - CANCELAMENTO', level=1)
-    document.add_paragraph('A CONTRATANTE pagará multa de 30% do valor do contrato em caso de cancelamento. O CONTRATADO pagará multa de 100% do valor do contrato em caso de cancelamento.')
-    document.add_paragraph()
-
-    # Assinaturas
-    document.add_paragraph(f"RESPONSÁVEL PELO CONTRATO: {dados.get('Responsavel', 'N/A')}")
-    document.add_paragraph(f"São Paulo, {dados.get('Data de Pagamento', 'N/A')}")
-    document.add_paragraph()
-    document.add_paragraph('CONTRATANTE', style='Normal').bold = True
-    document.add_paragraph('______________________________', style='Normal')
-    document.add_paragraph('CONTRATADO', style='Normal').bold = True
-    document.add_paragraph('______________________________', style='Normal')
-
-    # Salvar o arquivo
-    try:
         doc_stream = BytesIO()
         document.save(doc_stream)
         doc_stream.seek(0)
-        print("[OK] Contrato gerado na memória.")
         return doc_stream
     except Exception as e:
-        print(f"[ERRO] Falha ao gerar contrato: {e}")
+        print(f"[ERRO] Falha ao gerar contrato DOCX: {e}")
         return None
 
+def gerar_contrato_pdf_direto(dados: Dict[str, Any]) -> Optional[BytesIO]:
+    """Sua nova função de gerar PDF com WeasyPrint."""
+    try:
+        html_string = render_template("contrato_template.html", dados=dados)
+        pdf_bytes = HTML(string=html_string).write_pdf()
+        pdf_stream = BytesIO(pdf_bytes)
+        pdf_stream.seek(0)
+        return pdf_stream
+    except Exception as e:
+        print(f"[ERRO] Falha ao gerar contrato PDF com WeasyPrint: {e}")
+        return None
+
+def gerar_relatorio_entrega(dados: Dict[str, Any]) -> Optional[BytesIO]:
+    """Sua função de gerar relatório de entrega, que retorna BytesIO."""
+    try:
+        document = Document()
+        document.add_heading('RELATÓRIO DE ENTREGA', 0)
+        contratante = dados.get('Contratante', {})
+        data_evento = dados.get('Data do Evento', dados.get('Data_do_Evento', 'Não informada'))
+        local_evento = dados.get('Local do Evento', dados.get('Local_do_Evento', 'Não informado'))
+        document.add_paragraph(f"Nome do Cliente: {contratante.get('Nome', 'Não encontrado')}")
+        document.add_paragraph(f"Data do Evento: {data_evento}")
+        document.add_paragraph(f"Local do Evento: {local_evento}")
+        document.add_paragraph(f"Data de Emissão: {datetime.datetime.now().strftime('%d/%m/%Y')}")
+        document.add_paragraph("\nProdutos Contratados:")
+        
+        # (Lógica para ler os produtos do JSON)
+        produtos = []
+        produtos_json_str = dados.get('produtosContratadosJson', '[]')
+        try:
+            produtos = json.loads(produtos_json_str)
+        except json.JSONDecodeError:
+            print("[AVISO] JSON de produtos inválido ao gerar Relatório.")
+            produtos = dados.get('Produtos Contratados', []) # Fallback
+
+        if produtos:
+            tabela = document.add_table(rows=1, cols=4)
+            tabela.style = 'Table Grid'
+            hdr_cells = tabela.rows[0].cells
+            hdr_cells[0].text, hdr_cells[1].text, hdr_cells[2].text, hdr_cells[3].text = 'Quantidade', 'Produto', 'Valor Unitário', 'Valor Total'
+            for item in produtos:
+                row_cells = tabela.add_row().cells
+                row_cells[0].text, row_cells[1].text, row_cells[2].text, row_cells[3].text = str(item.get('Quantidade', '')), str(item.get('Produto', '')), str(item.get('Valor Unitário', '')), str(item.get('Valor Total Item', ''))
+        else:
+            document.add_paragraph("Nenhum produto encontrado.")
+            
+        document.add_paragraph(f"\nValor Total do Pedido: R$ {dados.get('Valor Total do Pedido', dados.get('Valor_Total_do_Pedido', 'N/A'))}")
+        document.add_paragraph("\n\n\nAssinaturas:\n")
+        document.add_paragraph("______________________________\nResponsável pela Entrega")
+        document.add_paragraph("\n\n")
+        document.add_paragraph("______________________________\nResponsável pela Retirada")
+        doc_stream = BytesIO()
+        document.save(doc_stream)
+        doc_stream.seek(0)
+        return doc_stream
+    except Exception as e:
+        print(f"[ERRO] Falha ao salvar relatório de entrega: {e}")
+        return None
+
+def exportar_para_excel(dados: Dict[str, Any]) -> Optional[BytesIO]:
+    """Sua função de exportar para Excel, que retorna BytesIO."""
+    try:
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "Dados do Contrato"
+        sheet['A1'] = "Campo"
+        sheet['B1'] = "Informação Extraída"
+        linha_atual = 2
+        for chave, valor in dados.items():
+            if chave == 'Produtos Contratados' or chave == 'produtosContratadosJson': # Ignora ambos os formatos
+                continue
+            if isinstance(valor, dict):
+                for sub_chave, sub_valor in valor.items():
+                    sheet[f'A{linha_atual}'] = f"{chave} - {sub_chave}"
+                    sheet[f'B{linha_atual}'] = sub_valor
+                    linha_atual += 1
+            else:
+                sheet[f'A{linha_atual}'] = chave
+                sheet[f'B{linha_atual}'] = valor
+                linha_atual += 1
+        linha_atual += 2
+        
+        # (Lógica para ler os produtos do JSON)
+        produtos_contratados_str = dados.get('produtosContratadosJson')
+        if produtos_contratados_str:
+            produtos_contratados = json.loads(produtos_contratados_str)
+            if produtos_contratados and isinstance(produtos_contratados, list) and len(produtos_contratados) > 0:
+                headers_produtos = list(produtos_contratados[0].keys())
+                for col_idx, header in enumerate(headers_produtos, 1):
+                    sheet.cell(row=linha_atual, column=col_idx, value=header)
+                linha_atual += 1
+                for produto in produtos_contratados:
+                    for col_idx, header in enumerate(headers_produtos, 1):
+                        sheet.cell(row=linha_atual, column=col_idx, value=produto.get(header, 'N/A'))
+                    linha_atual += 1
+                    
+        excel_stream = BytesIO()
+        workbook.save(excel_stream)
+        excel_stream.seek(0)
+        return excel_stream
+    except Exception as e:
+        print(f"\n[ERRO] Não foi possível salvar a planilha: {e}")
+        return None
 
 # ==============================================================================
 # BLOCO DE EXECUÇÃO: O "Gerente de Operações" para testes local
+# (Esta é a ÚNICA parte mesclada da versão deles, mas foi ADAPTADA
+# para funcionar com suas novas funções que usam BytesIO)
 # ==============================================================================
 if __name__ == "__main__":
     caminho_do_pdf = "modelo_contrato.pdf" # Certifique-se de ter este arquivo no mesmo diretório
 
-    # Exemplo de uso das funções
     print(f"Tentando extrair texto de: {caminho_do_pdf}")
-    texto_extraido = extrair_texto_de_pdf(caminho_do_pdf)
     
-    if texto_extraido:
-        print("\nTexto extraído com sucesso. Tentando extrair dados...")
-        dados_do_contrato = extrair_dados_do_contrato(texto_extraido)
+    # 1. Adaptado para ler bytes e chamar sua nova função
+    try:
+        with open(caminho_do_pdf, 'rb') as f:
+            pdf_bytes_content = f.read()
         
-        # Imprime os resultados no terminal
+        # Chama sua função principal
+        dados_do_contrato = extrair_dados_do_contrato_por_tipo(pdf_bytes_content, tipo_analise='sistema')
+
+    except FileNotFoundError:
+        print(f"\n[ERRO] Arquivo de teste '{caminho_do_pdf}' não encontrado. Crie um para testar.")
+        dados_do_contrato = None
+    except Exception as e:
+        print(f"\n[ERRO] Falha ao ler PDF de teste: {e}")
+        dados_do_contrato = None
+
+    if dados_do_contrato:
+        print("\nDados extraídos com sucesso. Imprimindo e gerando arquivos...")
+        
+        # 2. Adaptado para imprimir dados da sua nova estrutura (com JSON)
         print("\n--- DADOS EXTRAÍDOS DO CONTRATO ---")
         for chave, valor in dados_do_contrato.items():
             print(f"\n>> {chave}:")
-            if isinstance(valor, dict):
+            if chave == 'produtosContratadosJson':
+                try:
+                    produtos = json.loads(valor)
+                    for item in produtos:
+                        print(f"    - {item}")
+                except json.JSONDecodeError:
+                    print(f"    {valor}") # Print as string if not valid JSON
+            elif isinstance(valor, dict):
                 for sub_chave, sub_valor in valor.items():
-                    print(f"    {sub_chave}: {sub_valor}")
-            elif isinstance(valor, list) and valor:
-                for item in valor:
-                    print(f"    - {item}")
+                    print(f"     {sub_chave}: {sub_valor}")
             else:
                 print(f"    {valor}")
         print("\n----------------------------------------------------")
 
-        # Chama a função para criar a planilha Excel
+        # 3. Adaptado para salvar o BytesIO retornado por sua função de Excel
         nome_excel = f"dados_contrato_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        exportar_para_excel(dados_do_contrato, nome_do_arquivo=nome_excel)
+        excel_stream = exportar_para_excel(dados_do_contrato)
+        if excel_stream:
+            with open(nome_excel, 'wb') as f:
+                f.write(excel_stream.getvalue())
+            print(f"\n[SUCESSO] Dados exportados para o arquivo '{nome_excel}'")
+        else:
+            print(f"\n[ERRO] Não foi possível gerar a planilha Excel.")
 
-        # Chama a nova função para criar o relatório de entrega em DOCX
+        # 4. Adaptado para salvar o BytesIO retornado por sua função de Relatório
         nome_docx = f"relatorio_entrega_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
-        gerar_relatorio_entrega(dados_do_contrato, nome_arquivo=nome_docx)
+        docx_stream = gerar_relatorio_entrega(dados_do_contrato)
+        if docx_stream:
+            with open(nome_docx, 'wb') as f:
+                f.write(docx_stream.getvalue())
+            print(f"[OK] Relatório de entrega salvo em: {nome_docx}")
+        else:
+            print(f"[ERRO] Falha ao salvar relatório de entrega.")
 
     else:
         print("\nNão foi possível processar o PDF.")

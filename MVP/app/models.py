@@ -82,8 +82,7 @@ class Pedido(db.Model):
             'produtosContratadosJson': self.produtosContratadosJson
         }
     
-
-# classe para historico de interações:
+    # classe para historico de interações:
 
 class InteracaoPedido(db.Model):
     __tablename__ = 'interacoes_pedido'

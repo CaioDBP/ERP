@@ -23,13 +23,13 @@
                 </div>
             </div>
         </div>
-
+        
         <div class="card">
             <div class="card-header"><h3 class="card-title">Detalhes do Evento</h3></div>
             <div class="card-body">
                 <div class="form-grid">
                     <div class="form-group"><label class="form-label">Data do Evento *</label><input type="date" name="dataEvento" class="form-input" required></div>
-                    <div class="form-group"><label class="form-label">Horário</label><input type="time" class="form-input"> </div>
+                    <div class="form-group"><label class="form-label">Horário</label><input type="time" name="horarioEvento" class="form-input"> </div>
                     <div class="form-group full-width"><label class="form-label">Local do Evento</label><input type="text" name="localEvento" class="form-input" placeholder="Nome e endereço do local"></div>
                     <div class="form-group full-width"><label class="form-label">Como nos conheceu?</label>
                         <select name="comoConheceu" class="form-select">
@@ -39,7 +39,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="card">
             <div class="card-header"><h3 class="card-title">Produtos Contratados</h3></div>
             <div class="card-body">
@@ -50,8 +50,7 @@
                                 <th style="width: 40%;">Produto</th><th>Quantidade</th><th>Valor Unit. (R$)</th><th>Valor Total (R$)</th><th style="width: 60px;"></th>
                             </tr>
                         </thead>
-                        <tbody id="produtosTableBody">
-                            </tbody>
+                        <tbody id="produtosTableBody"></tbody>
                         <tfoot>
                             <tr style="background: #f8fafc;">
                                 <td colspan="3" style="text-align: right;"><strong>Valor Total do Contrato:</strong></td>
@@ -79,60 +78,44 @@
             </div>
         </div>
     </div>
+    
+    <input type="hidden" id="formato_desejado" name="formato_desejado" value="docx">
 
     <div class="form-actions-bottom">
         <a href="/pedidos" class="btn btn-secondary"><i class="fas fa-times"></i> Cancelar</a>
-        <button type="submit" class="btn btn-primary"><i class="fas fa-file-download"></i> Gerar e Baixar Contrato</button>
+        
+        <button type="submit" class="btn btn-primary" onclick="setDownloadFormat('docx')">
+            <i class="fas fa-file-word"></i> Gerar e Baixar DOCX
+        </button>
+        
+        <button type="submit" class="btn btn-danger" onclick="setDownloadFormat('pdf')">
+            <i class="fas fa-file-pdf"></i> Gerar e Baixar PDF
+        </button>
     </div>
 </form>
 
 <style>
-
-.form-sections {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-.form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
-}
-
-.form-group.full-width {
-    grid-column: 1 / -1;
-}
-
-.produtos-table input {
-    margin: 0;
-}
-
-.form-actions-bottom {
-    display: flex;
-    justify-content: flex-end;
-    gap: 1rem;
-    margin-top: 2rem;
-    padding-top: 2rem;
-    border-top: 1px solid var(--border-color);
-}
-
-@media (max-width: 768px) {
-    .form-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
+/* (Estilos CSS idênticos em ambas as versões) */
+.form-sections { display: flex; flex-direction: column; gap: 1.5rem; }
+.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+.form-group.full-width { grid-column: 1 / -1; }
+.produtos-table input { margin: 0; }
+.form-actions-bottom { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border-color); }
+@media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
 </style>
 
 <script>
-// console.log("essa versao de novo contrato ja esta refatorada, modulada e pronta")
-
+// (JAVASCRIPT CORRETO E ATUALIZADO DA SUA VERSÃO)
 document.addEventListener('DOMContentLoaded', function() {
     const contratoForm = document.getElementById('contratoForm');
     const produtosTableBody = document.getElementById('produtosTableBody');
 
-    // --- LÓGICA DE UI PARA A TABELA DINÂMICA ---
+    // (A MUDANÇA 3 - FUNÇÃO JS PARA ATUALIZAR CAMPO OCULTO - DA SUA VERSÃO)
+    window.setDownloadFormat = function(format) {
+        document.getElementById('formato_desejado').value = format;
+    }
+
+    // --- LÓGICA DE UI PARA A TABELA DINÂMICA (Idêntica) ---
     window.adicionarLinhaProduto = function() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -140,14 +123,10 @@ document.addEventListener('DOMContentLoaded', function() {
             <td><input type="number" name="produto_qtd" class="form-input qtd-input" min="1" value="1" required></td>
             <td><input type="number" name="produto_valor_unit" class="form-input valor-input" min="0" step="0.01" placeholder="0.00" required></td>
             <td><input type="text" name="produto_valor_total" class="form-input total-input" readonly></td>
-            <td>
-                <button type="button" class="btn-icon btn-danger" onclick="this.closest('tr').remove(); calcularTotal();">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </td>
+            <td><button type="button" class="btn-icon btn-danger" onclick="this.closest('tr').remove(); calcularTotal();"><i class="fas fa-trash"></i></button></td>
         `;
         produtosTableBody.appendChild(tr);
-        addCalculationListeners(tr); // Adiciona listeners para a nova linha
+        addCalculationListeners(tr);
     }
 
     function calcularTotal() {
@@ -156,8 +135,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const qtd = parseFloat(tr.querySelector('.qtd-input')?.value) || 0;
             const valor = parseFloat(tr.querySelector('.valor-input')?.value) || 0;
             const totalProduto = qtd * valor;
-            const totalInput = tr.querySelector('.total-input');
-            if (totalInput) totalInput.value = totalProduto.toFixed(2);
+            tr.querySelector('.total-input').value = totalProduto.toFixed(2);
             total += totalProduto;
         });
         document.getElementById('valorTotalContrato').textContent = 'R$ ' + total.toFixed(2);
@@ -169,10 +147,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Adiciona a primeira linha de produto ao carregar a página
     adicionarLinhaProduto();
 
-    // ---  SUBMISSÃO DO FORMULÁRIO  ---
+    // --- SUBMISSÃO DO FORMULÁRIO (ATUALIZADA PELA SUA VERSÃO) ---
     contratoForm.addEventListener('submit', async function(event) {
         event.preventDefault();
         
@@ -182,51 +159,56 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Usa FormData para coletar a maioria dos campos
+        // FormData agora coleta o 'formato_desejado'
         const formData = new FormData(contratoForm);
         const contratoData = Object.fromEntries(formData.entries());
 
-        // Coleta os dados da tabela dinâmica de produtos manualmente
         const produtos = [];
         document.querySelectorAll('#produtosTableBody tr').forEach(row => {
-            const produto = {
+            produtos.push({
                 'Produto': row.querySelector('input[name="produto_nome"]').value,
                 'Quantidade': row.querySelector('input[name="produto_qtd"]').value,
                 'Valor Unitário': row.querySelector('input[name="produto_valor_unit"]').value,
                 'Valor Total Item': row.querySelector('input[name="produto_valor_total"]').value
-            };
-            produtos.push(produto);
+            });
         });
         contratoData.produtosContratados = produtos;
-
-        // Adiciona o valor total calculado manualmente
-        const valorTotalText = document.getElementById('valorTotalContrato').textContent;
-        contratoData.valorTotalPedidoContrato = valorTotalText.replace('R$ ', '').trim();
+        contratoData.valorTotalPedidoContrato = document.getElementById('valorTotalContrato').textContent.replace('R$ ', '').trim();
         
         try {
             const response = await fetch('/api/contracts/gerar-contrato', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-User-Id': userId,
-                },
-                body: JSON.stringify(contratoData)
+                headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+                body: JSON.stringify(contratoData) // Body agora inclui 'formato_desejado'
             });
 
             if (response.ok) {
+                // (Lógica de download aprimorada da SUA versão)
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
+                
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = `contrato.${contratoData.formato_desejado}`; // Nome padrão
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                    if (filenameMatch && filenameMatch.length > 1) {
+                        filename = filenameMatch[1];
+                    }
+                }
+
                 a.style.display = 'none';
                 a.href = url;
-                a.download = `contrato_gerado_${new Date().toISOString().slice(0, 10)}.docx`;
+                a.download = filename;
                 document.body.appendChild(a);
                 a.click();
-                window.URL.revokeObjectURL(url);
+                window.URL.revokeObjectURL(url); // Limpa a memória
+
                 alert('Contrato gerado com sucesso! O download foi iniciado.');
                 contratoForm.reset();
-                adicionarLinhaProduto(); 
-                calcularTotal(); 
+                produtosTableBody.innerHTML = ''; // Limpa a tabela (corrigido)
+                adicionarLinhaProduto();
+                calcularTotal();
             } else {
                 const error = await response.json();
                 alert(`Erro ao gerar contrato: ${error.message}`);

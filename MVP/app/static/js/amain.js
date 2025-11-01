@@ -1364,6 +1364,8 @@ if (calculadoraPage) {
 
 // logica de filtros para a pagina de exportar:
 
+// Em static/js/main.js (pode adicionar no final)
+
 const aplicarFiltrosBtn = document.getElementById('apply-export-filters-btn');
 
 if (aplicarFiltrosBtn) {

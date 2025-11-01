@@ -1,205 +1,155 @@
-# Arquivo: app/contratos/routes.py (Versão Refatorada com SQLAlchemy)
+# Arquivo: app/contratos/routes.py (VERSÃO MESCLADA E FINAL)
 
-import os
-import json
+import re
 from datetime import datetime
-from flask import Blueprint, request, jsonify, current_app, send_file
-from app import db                  # Importamos a instância do banco de dados
-from app.models import Pedido         # Importamos nosso modelo Pedido
-from app.Extractor import extrair_texto_de_pdf, extrair_dados_do_contrato, gerar_contrato_docx
+from flask import Blueprint, request, jsonify, send_file
+from app import db
+from app.models import Pedido
+
+# --- IMPORTAÇÕES ATUALIZADAS ---
+# Importamos 'Dict' e 'Any' para as anotações de tipo (type hints),
+# o que deixa o código mais claro para a equipe.
+from typing import Dict, Any
+
+# Importamos nossas novas e renomeadas funções do Extractor.py.
+# Os nomes são claros e refletem suas funções específicas.
+from app.Extractor import (
+    extrair_dados_do_contrato_por_tipo,
+    gerar_contrato_docx,
+    gerar_contrato_pdf_direto
+)
 
 contratos_bp = Blueprint('contratos', __name__, url_prefix='/api/contracts')
 
-# @contratos_bp.route('/upload', methods=['POST'])
-# def upload_contract():
-#     user_id = request.headers.get('X-User-Id')
-#     if not user_id:
-#         return jsonify({'message': 'Usuário não autenticado.'}), 401
-
-#     if 'file' not in request.files:
-#         return jsonify({'message': 'Nenhum arquivo enviado.'}), 400
-
-#     file = request.files['file']
-#     if file.filename == '' or not (file.filename.endswith('.pdf')):
-#         return jsonify({'message': 'Nenhum arquivo PDF selecionado.'}), 400
-
-#     upload_folder = current_app.config.get('UPLOAD_FOLDER')
-#     if not upload_folder:
-#         return jsonify({'message': 'Pasta de upload não configurada.'}), 500
-
-#     filepath = os.path.join(upload_folder, file.filename)
-#     file.save(filepath)
-
-#     try:
-#         texto_extraido = extrair_texto_de_pdf(filepath)
-#         if not texto_extraido:
-#             return jsonify({'message': 'Não foi possível extrair texto do contrato.'}), 500
-
-#         dados_extraidos_raw = extrair_dados_do_contrato(texto_extraido)
-        
-#         # --- Mapeamento dos dados extraídos para o formato do pedido ---
-#         # (Esta parte da lógica original continua a mesma)
-#         produtos_contratados = dados_extraidos_raw.get('Produtos Contratados', [])
-#         total_quantidade_produtos = sum(int(p.get('Quantidade', 0)) for p in produtos_contratados)
-#         sabores_list = [p.get('Produto') for p in produtos_contratados if p.get('Produto')]
-
-#         # Criamos uma instância do nosso modelo Pedido com os dados extraídos
-#         new_pedido_from_contract = Pedido(
-#             clienteNome=dados_extraidos_raw.get('Contratante', {}).get('Nome', 'Cliente Desconhecido'),
-#             clienteRG=dados_extraidos_raw.get('Contratante', {}).get('RG', ''),
-#             clienteCPF=dados_extraidos_raw.get('Contratante', {}).get('CPF', ''),
-#             nomeContratado=dados_extraidos_raw.get('Contratado', {}).get('Nome Empresa', ''),
-#             cnpjContratado=dados_extraidos_raw.get('Contratado', {}).get('CNPJ', ''),
-#             valorTotalPedidoContrato=dados_extraidos_raw.get('Valor Total do Pedido', ''),
-#             dataPagamentoContrato=dados_extraidos_raw.get('Data de Pagamento', ''),
-#             dataEvento=dados_extraidos_raw.get('Data do Evento', '').replace('/', '-'),
-#             localEvento=dados_extraidos_raw.get('Local do Evento', ''),
-#             produtosContratadosJson=json.dumps(produtos_contratados),
-#             tipoPedido='Contrato',
-#             quantidade=total_quantidade_produtos,
-#             sabores=', '.join(sabores_list),
-#             observacoes=f"Extraído de contrato: {file.filename}.",
-            
-#             # Campos obrigatórios que podem não estar no contrato, com valores padrão
-#             dataRetirada=dados_extraidos_raw.get('Data do Evento', '').replace('/', '-'), # Usando data do evento como padrão
-#             horarioRetirada='12:00', # Usando um horário padrão
-            
-#             # Ligando ao usuário
-#             user_id=user_id
-#         )
-
-#         # Adicionamos à sessão e salvamos no banco de dados
-#         db.session.add(new_pedido_from_contract)
-#         db.session.commit()
-
-#         return jsonify({
-#             'message': 'Contrato processado e pedido salvo com sucesso!',
-#             'pedido': new_pedido_from_contract.to_dict() # Retornamos o novo pedido criado
-#         }), 201
-
-#     except Exception as e:
-#         print(f"Erro ao processar o arquivo de contrato: {e}")
-#         return jsonify({'message': f'Erro ao processar o contrato: {str(e)}'}), 500
-#     finally:
-#         # Garante que o arquivo temporário seja sempre removido
-#         if os.path.exists(filepath):
-#             os.remove(filepath)
-# Em app/contratos/routes.py
-
+# ==============================================================================
+# ROTA DE UPLOAD E ANÁLISE (ATUALIZADA)
+# ==============================================================================
 @contratos_bp.route('/upload', methods=['POST'])
 def upload_contract():
+    """
+    Recebe um arquivo PDF via upload, extrai os dados e os retorna ao frontend
+    para que o usuário possa revisar antes de salvar como um novo pedido.
+    """
+    # Validação de segurança e de dados de entrada
     user_id = request.headers.get('X-User-Id')
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
 
     if 'file' not in request.files:
         return jsonify({'message': 'Nenhum arquivo enviado.'}), 400
+
     file = request.files['file']
-    if file.filename == '' or not (file.filename.endswith('.pdf')):
+    if file.filename == '' or not file.filename.endswith('.pdf'):
         return jsonify({'message': 'Nenhum arquivo PDF selecionado.'}), 400
-    
-    upload_folder = current_app.config.get('UPLOAD_FOLDER')
-    filepath = os.path.join(upload_folder, file.filename)
-    file.save(filepath)
+
+    # MUDANÇA IMPORTANTE: Lê o 'tipo_analise' que o frontend envia
+    # com base no botão que o usuário clicou ('sistema' ou 'padrao').
+    tipo_analise = request.form.get('tipo_analise', 'padrao')
 
     try:
-        texto_extraido = extrair_texto_de_pdf(filepath)
-        if not texto_extraido:
-            return jsonify({'message': 'Não foi possível extrair texto do contrato.'}), 500
+        # OTIMIZAÇÃO: Lê o arquivo em memória (file.read()) em vez de salvá-lo no disco.
+        # É mais rápido e não deixa lixo no servidor.
+        pdf_bytes = file.read()
 
-        dados_extraidos_raw = extrair_dados_do_contrato(texto_extraido)
+        # CHAMA NOSSA FUNÇÃO INTELIGENTE: Ela escolhe o método de extração correto (Regex ou IA).
+        dados_extraidos = extrair_dados_do_contrato_por_tipo(pdf_bytes, tipo_analise)
 
-        # --- Mapeamento dos dados para um DICIONÁRIO SIMPLES ---
-        produtos_contratados = dados_extraidos_raw.get('Produtos Contratados', [])
-        total_quantidade = sum(int(p.get('Quantidade', 0)) for p in produtos_contratados)
-        sabores = ', '.join([p.get('Produto') for p in produtos_contratados if p.get('Produto')])
+        if not dados_extraidos:
+            return jsonify({'message': 'Não foi possível extrair dados do contrato.'}), 500
 
-        extracted_data_for_pedido = {
-            'clienteNome': dados_extraidos_raw.get('Contratante', {}).get('Nome', ''),
-            'clienteRG': dados_extraidos_raw.get('Contratante', {}).get('RG', ''),
-            'clienteCPF': dados_extraidos_raw.get('Contratante', {}).get('CPF', ''),
-            'dataEvento': dados_extraidos_raw.get('Data do Evento', '').replace('/', '-'),
-            'localEvento': dados_extraidos_raw.get('Local do Evento', ''),
-            'produtosContratadosJson': json.dumps(produtos_contratados),
-            'quantidade': total_quantidade,
-            'sabores': sabores,
-            'valorTotalPedidoContrato': dados_extraidos_raw.get('Valor Total do Pedido', ''),
-            'dataPagamentoContrato': dados_extraidos_raw.get('Data de Pagamento', ''),
-            'nomeContratado': dados_extraidos_raw.get('Contratado', {}).get('Nome Empresa', ''),
-            'cnpjContratado': dados_extraidos_raw.get('Contratado', {}).get('CNPJ', ''),
-            'tipoPedido': 'Contrato',
-            'observacoes': f"Extraído de contrato: {file.filename}."
-        }
-        
-        # --- MUDANÇA  ---
-        # AGORA, APENAS RETORNAMOS o dicionário com os dados extraídos.
+        # Retorna os dados para o frontend para o usuário revisar.
+        # A estrutura deste JSON corresponde ao que o JavaScript espera.
         return jsonify({
             'message': 'Dados extraídos com sucesso! Revise para salvar.',
-            'extractedData': extracted_data_for_pedido,
+            'extractedData': dados_extraidos,
         }), 200
 
     except Exception as e:
+        print(f"[ERRO] Falha na rota /upload: {e}")
         return jsonify({'message': f'Erro ao processar o contrato: {str(e)}'}), 500
-    finally:
-        if os.path.exists(filepath):
-            os.remove(filepath)
 
-
+# ==============================================================================
+# ROTA PARA GERAR NOVOS CONTRATOS (ATUALIZADA)
+# ==============================================================================
 @contratos_bp.route('/gerar-contrato', methods=['POST'])
 def gerar_contrato():
     """
-    Recebe os dados de um formulário, mapeia para o formato correto e gera um contrato em DOCX.
+    Recebe dados de um formulário via JSON, escolhe o formato de documento
+    desejado (DOCX ou PDF) e chama a função apropriada para gerar e
+    enviar o arquivo de volta para o usuário.
     """
     user_id = request.headers.get('X-User-Id')
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
 
     data = request.json
-    
-   
-    # Aqui nós "traduzimos" os dados do formulário para o formato que a função geradora espera.
-    
+    # Lê o formato que o frontend envia com base no botão clicado (ex: 'pdf' ou 'docx').
+    formato_desejado = data.get('formato_desejado', 'docx')
+
+    # Mapeamento dos dados do formulário para o formato padrão que nossas funções geradoras esperam.
+    # (Isto é idêntico à lógica da versão deles, mas agora em sua rota aprimorada)
     contratante_info = {
-        'Nome': data.get('contratanteNome', 'N/A'),
-        'RG': data.get('contratanteRg', 'N/A'),
-        'CPF': data.get('contratanteCpf', 'N/A'),
-        'Endereco': data.get('contratanteEndereco', 'N/A'),
-        'Telefone': data.get('contratanteTelefone', 'N/A'),
-        'Email': data.get('contratanteEmail', 'N/A'),
+        'Nome': data.get('contratanteNome'), 'RG': data.get('contratanteRg'),
+        'CPF': data.get('contratanteCpf'), 'Endereco': data.get('contratanteEndereco'),
+        'Telefone': data.get('contratanteTelefone'), 'Email': data.get('contratanteEmail'),
     }
-
-    produtos_contratados_list = data.get('produtosContratados', [])
-
-    # Este é o dicionário final no formato correto
     dados_para_contrato = {
         'Contratante': contratante_info,
-        'Data do Evento': data.get('dataEvento', 'N/A'),
-        'Local do Evento': data.get('localEvento', 'Não Informado'),
-        'Produtos Contratados': produtos_contratados_list,
-        'Valor Total do Pedido': data.get('valorTotalPedidoContrato', 'N/A'),
-        'Data de Pagamento': data.get('dataPagamentoContrato', 'N/A'),
-        'Forma de Pagamento': data.get('formaPagamento', 'Não Informado'),
-        'Como nos conheceu': data.get('comoConheceu', 'N/A'),
-        'Responsavel': data.get('responsavelContrato', 'N/A'), # Verifique se este campo vem do seu form
+        'Data do Evento': data.get('dataEvento'),
+        'Local do Evento': data.get('localEvento'),
+        'Produtos Contratados': data.get('produtosContratados', []),
+        'Valor Total do Pedido': data.get('valorTotalPedidoContrato'),
+        'Data de Pagamento': data.get('dataPagamentoContrato'),
+        'Forma de Pagamento': data.get('formaPagamento'),
+        'Como nos conheceu': data.get('comoConheceu'),
+        'Responsavel': data.get('responsavelContrato'),
     }
- 
 
     try:
-        # AGORA PASSAMOS O DICIONÁRIO MAPEADO, E NÃO O 'data' BRUTO
-        doc_stream = gerar_contrato_docx(dados_para_contrato)
-
-        if doc_stream is None:
-            return jsonify({'message': 'Erro interno ao gerar o contrato.'}), 500
-
-        contrato_filename = f"contrato_gerado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        # Delega a lógica de geração e envio para uma função auxiliar para manter a rota limpa.
+        response, error_message = _processar_e_enviar_contrato(dados_para_contrato, formato_desejado)
+        if error_message:
+            return jsonify({'message': error_message}), 500
+        return response
         
+    except Exception as e:
+        print(f"[ERRO] Não foi possível gerar ou enviar o contrato: {e}")
+        return jsonify({'message': f"Erro ao gerar o contrato: {str(e)}"}), 500
+
+# --- FUNÇÃO AUXILIAR PARA GERAÇÃO E ENVIO DE DOCUMENTOS ---
+def _processar_e_enviar_contrato(dados: Dict[str, Any], formato: str):
+    """
+    Função interna que chama o gerador correto (DOCX ou PDF) e envia o arquivo.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    # Limpa o nome do cliente para usar em nomes de arquivo seguros (evita erros com espaços ou caracteres especiais).
+    nome_cliente_safe = re.sub(r'[^\w-]', '_', dados['Contratante'].get('Nome', 'Contrato')).lower()
+    nome_base = f"contrato_{nome_cliente_safe}_{timestamp}"
+
+    if formato == 'pdf':
+        # --- NOVA LÓGICA DE GERAÇÃO DIRETA DE PDF ---
+        print("[INFO] Gerando contrato em formato PDF via WeasyPrint...")
+        pdf_stream = gerar_contrato_pdf_direto(dados)
+        if not pdf_stream:
+            return None, "Erro interno ao gerar o documento PDF."
+        
+        return send_file(
+            pdf_stream,
+            as_attachment=True,
+            download_name=f"{nome_base}.pdf",
+            mimetype='application/pdf'
+        ), None
+    
+    else: # O padrão é 'docx'
+        # --- LÓGICA DE GERAÇÃO DE DOCX ---
+        print("[INFO] Gerando contrato em formato DOCX...")
+        doc_stream = gerar_contrato_docx(dados)
+        if not doc_stream:
+            return None, "Erro interno ao gerar o documento DOCX."
+
         return send_file(
             doc_stream,
             as_attachment=True,
-            download_name=contrato_filename,
+            download_name=f"{nome_base}.docx",
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
-
-    except Exception as e:
-        print(f"\n[ERRO] Não foi possível gerar ou enviar o contrato: {e}")
-        return jsonify({'message': f"Erro ao gerar o contrato: {str(e)}"}), 500
+        ), None

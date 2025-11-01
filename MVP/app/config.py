@@ -10,7 +10,7 @@ class Config:
     # WHATSAPP_API_KEY = os.environ.get('WHATSAPP_API_KEY')
     # PDF_EXTRACTION_MODEL = 'v1'
 
-     # 🟢 Diretório base do projeto
+    # 🟢 Diretório base do projeto
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
     # 🟢 Pasta onde os arquivos enviados serão salvos

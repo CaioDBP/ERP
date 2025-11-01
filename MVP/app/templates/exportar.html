@@ -13,7 +13,6 @@
     <p class="page-subtitle">Selecione e exporte pedidos confirmados para a produção</p>
 </div>
 
-<!-- Filtros -->
 <div class="card">
     <div class="card-header">
         <h3 class="card-title">Filtros</h3>
@@ -43,7 +42,6 @@
     </div>
 </div>
 
-<!-- Tabela -->
 <div class="card" style="margin-top: 1.5rem;">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <div>
@@ -67,14 +65,12 @@
                         </th>
                         <th>Cliente</th>
                         <th>Data de Retirada</th>
-                        <th>Produto</th>
-                        <th>Quantidade</th>
+                        <th>Produto</th> <th>Quantidade</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody id="pedidos-export-table-body">
-                    <!-- Linhas serão inseridas via JS -->
-                </tbody>
+                    </tbody>
             </table>
             <p id="no-pedidos-export-message" class="text-center text-gray-500 hidden" style="padding: 1rem;">
                 Nenhum pedido encontrado.
@@ -86,10 +82,10 @@
 <p id="export-message" class="hidden text-center mt-4 text-sm"></p>
 
 <style>
+/* (Estilos da versão deles) */
 .hidden {
     display: none !important; 
 }
-
 
 .export-message {
     text-align: center;
@@ -108,8 +104,6 @@
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
 }
-
-
 </style>
 
 <script src="{{ url_for('static', filename='js/exportacao.js') }}"></script>

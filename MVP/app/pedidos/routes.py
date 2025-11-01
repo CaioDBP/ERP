@@ -1,29 +1,30 @@
-# Arquivo: app/pedidos/routes.py (Versão Refatorada com SQLAlchemy)
+# Arquivo: app/pedidos/routes.py (VERSÃO MESCLADA E FINAL)
 
 from flask import Blueprint, request, jsonify, current_app, send_from_directory, abort, url_for
 from datetime import datetime
-from app import db                  # Importamos a instância do banco de dados
-from app.models import Pedido, User, Arquivo # Importamos nossos modelos
+from app import db
+# (Imports da versão deles, mantendo as novas funcionalidades)
+from app.models import Pedido, User, Arquivo, InteracaoPedido 
+import os # (Import da versão deles)
 
 pedidos_bp = Blueprint('pedidos', __name__, url_prefix='/api/pedidos')
 
 @pedidos_bp.route('/cadastro', methods=['POST'])
 def create_pedido_cadastro():
+    """Rota para criar pedidos a partir do formulário de cadastro."""
     data = request.json
     user_id = request.headers.get('X-User-Id')
 
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
     
-    # Validação dos campos continua igual...
     required_fields = ['clienteNome', 'dataEvento', 'quantidade', 'tipoPedido', 'dataRetirada', 'horarioRetirada']
     if not all(field in data and data[field] for field in required_fields):
         return jsonify({'message': 'Campos obrigatórios faltando.'}), 400
 
-    # Em vez de criar um dicionário, criamos uma instância do nosso modelo Pedido
     new_pedido = Pedido(
         clienteNome=data['clienteNome'],
-        dataEvento=data['dataEvento'],
+        dataEvento=data['dataEvento'], # (Confia que o frontend envia no formato YYYY-MM-DD)
         dataRetirada=data['dataRetirada'],
         horarioRetirada=data['horarioRetirada'],
         tipoPedido=data['tipoPedido'],
@@ -34,8 +35,7 @@ def create_pedido_cadastro():
         status='pendente',
         prioridade=data.get('prioridade', 'normal'),
         responsavel=data.get('responsavel', None),
-        user_id=user_id, # Ligamos o pedido ao usuário
-        # Campos do contrato
+        user_id=user_id,
         clienteRG=data.get('clienteRG', ''),
         clienteCPF=data.get('clienteCPF', ''),
         nomeContratado=data.get('nomeContratado', ''),
@@ -46,50 +46,36 @@ def create_pedido_cadastro():
         produtosContratadosJson=data.get('produtosContratadosJson', '[]')
     )
 
-    # Adicionamos à sessão e salvamos no banco de dados
     db.session.add(new_pedido)
     db.session.commit()
 
     return jsonify({'message': 'Pedido salvo com sucesso!', 'pedido': new_pedido.to_dict()}), 201
 
-
-
+#
+# --- Bloco Mesclado e Corrigido ---
+# Mantivemos a rota POST / (que lida com o upload do contrato)
+# mas substituí a lógica de data frágil pela lógica limpa da rota /cadastro.
+#
 @pedidos_bp.route('', methods=['POST'])
 def create_pedido():
-    """Essa função lida com o pedido que vem do upload contrato"""
+    """Essa função lida com o pedido que vem do upload contrato."""
     data = request.json
     user_id = request.headers.get('X-User-Id')
 
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
     
-    # Validação dos campos continua igual...
     required_fields = ['clienteNome', 'dataEvento', 'quantidade', 'tipoPedido', 'dataRetirada', 'horarioRetirada']
     if not all(field in data and data[field] for field in required_fields):
         return jsonify({'message': 'Campos obrigatórios faltando.'}), 400
 
-    # ALTERAÇÃO QUE SALVA TODAS AS "DATAEVENTO" NO FORMATO YYYY-MM-DD
-
-    print("antes da formatacao", type(data["dataEvento"]))
+    # (LÓGICA DE DATA FRÁGIL REMOVIDA)
+    # Assumimos que o frontend (após a revisão do usuário)
+    # enviará a data no formato correto YYYY-MM-DD.
     
-    # dataEvento = datetime.strptime(data['dataEvento'], '%d-%m-%Y').date()
-    dataEvento = data["dataEvento"]
-    # dataEvento = slice(dataEvento)
-    # print(dataEvento)
-    dias = dataEvento[0:2]
-    mes = dataEvento[3:5]
-    ano = dataEvento[6:10]
-    dataEvento = ano + "-" + mes +"-"+dias
-    data["dataEvento"] = dataEvento
-    # print(data["dataEvento"])
-
-
-
-
-    # Em vez de criar um dicionário, criamos uma instância do nosso modelo Pedido
     new_pedido = Pedido(
         clienteNome=data['clienteNome'],
-        dataEvento=data['dataEvento'],
+        dataEvento=data['dataEvento'], # (Lógica limpa)
         dataRetirada=data['dataRetirada'],
         horarioRetirada=data['horarioRetirada'],
         tipoPedido=data['tipoPedido'],
@@ -100,8 +86,7 @@ def create_pedido():
         status='pendente',
         prioridade=data.get('prioridade', 'normal'),
         responsavel=data.get('responsavel', None),
-        user_id=user_id, # Ligamos o pedido ao usuário
-        # Campos do contrato
+        user_id=user_id,
         clienteRG=data.get('clienteRG', ''),
         clienteCPF=data.get('clienteCPF', ''),
         nomeContratado=data.get('nomeContratado', ''),
@@ -112,22 +97,22 @@ def create_pedido():
         produtosContratadosJson=data.get('produtosContratadosJson', '[]')
     )
 
-    # Adicionamos à sessão e salvamos no banco de dados
     db.session.add(new_pedido)
     db.session.commit()
 
     return jsonify({'message': 'Pedido salvo com sucesso!', 'pedido': new_pedido.to_dict()}), 201
+# --- Fim do Bloco Mesclado ---
+#
 
 @pedidos_bp.route('', methods=['GET'])
 def get_pedidos():
+    """Lista todos os pedidos (lógica da versão deles)."""
     user_id = request.headers.get('X-User-Id')
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
 
-    # Construímos a consulta ao banco de dados passo a passo
     query = Pedido.query.filter_by(user_id=user_id)
 
-    # Aplicamos os filtros vindos da URL
     filtro_cliente = request.args.get('cliente', '').lower()
     if filtro_cliente:
         query = query.filter(Pedido.clienteNome.ilike(f'%{filtro_cliente}%'))
@@ -144,29 +129,27 @@ def get_pedidos():
         else:
             query = query.filter_by(status=filtro_status)
     
-    # Executamos a consulta final no banco de dados
     pedidos = query.order_by(Pedido.createdAt.desc()).all()
     
-    # Convertemos a lista de objetos Pedido para uma lista de dicionários
     pedidos_dict = [pedido.to_dict() for pedido in pedidos]
 
     return jsonify(pedidos_dict), 200
 
 @pedidos_bp.route('/<int:pedido_id>', methods=['GET'])
 def get_pedido_details(pedido_id):
+    """Busca detalhes de um pedido (lógica da versão deles)."""
     user_id = request.headers.get('X-User-Id')
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
 
-    # Buscamos o pedido específico pelo ID e ID do usuário
     pedido = Pedido.query.filter_by(id=pedido_id, user_id=user_id).first()
-    # print(pedido.to_dict())
     if pedido:
         return jsonify(pedido.to_dict()), 200
     return jsonify({'message': 'Pedido não encontrado ou não autorizado.'}), 404
 
 @pedidos_bp.route('/<int:pedido_id>', methods=['PUT'])
 def update_pedido(pedido_id):
+    """Atualiza um pedido (lógica da versão deles)."""
     user_id = request.headers.get('X-User-Id')
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
@@ -177,16 +160,16 @@ def update_pedido(pedido_id):
 
     data = request.json
     
-    # Atualizamos os campos do objeto pedido diretamente
     for key, value in data.items():
         if hasattr(pedido, key) and key not in ['id', 'userId', 'createdAt']:
             setattr(pedido, key, value)
     
-    db.session.commit() # Salvamos as alterações no banco
+    db.session.commit()
     return jsonify({'message': 'Pedido atualizado com sucesso!', 'pedido': pedido.to_dict()}), 200
 
 @pedidos_bp.route('/<int:pedido_id>', methods=['DELETE'])
 def delete_pedido(pedido_id):
+    """Exclui um pedido (lógica da versão deles)."""
     user_id = request.headers.get('X-User-Id')
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
@@ -195,17 +178,15 @@ def delete_pedido(pedido_id):
     if not pedido:
         return jsonify({'message': 'Pedido não encontrado ou não autorizado.'}), 404
         
-    db.session.delete(pedido) # Marcamos o objeto para exclusão
-    db.session.commit() # Confirmamos a exclusão no banco
+    db.session.delete(pedido)
+    db.session.commit()
     return jsonify({'message': 'Pedido excluído com sucesso!'}), 200
 
-
+#
+# --- INÍCIO DAS NOVAS FUNCIONALIDADES DELES (MANTIDAS 100%) ---
+#
 
 # Rotas para historico de interações
-
-from app.models import InteracaoPedido
-
-# 🟢 Obter histórico de interações de um pedido
 @pedidos_bp.route('/<int:pedido_id>/interacoes', methods=['GET'])
 def get_interacoes(pedido_id):
     user_id = request.headers.get('X-User-Id')
@@ -215,8 +196,6 @@ def get_interacoes(pedido_id):
     interacoes = InteracaoPedido.query.filter_by(pedido_id=pedido_id).order_by(InteracaoPedido.data_interacao.desc()).all()
     return jsonify([i.to_dict() for i in interacoes]), 200
 
-
-# 🟣 Adicionar nova interação ao pedido
 @pedidos_bp.route('/<int:pedido_id>/interacoes', methods=['POST'])
 def add_interacao(pedido_id):
     user_id = request.headers.get('X-User-Id')
@@ -241,17 +220,9 @@ def add_interacao(pedido_id):
 
     return jsonify({'message': 'Interação adicionada com sucesso!'}), 201
 
-
-
-
 # Rotas para anexar arquivos aos pedidos
-# Anexar arquivos
-
-import os 
-
 @pedidos_bp.route('/<int:pedido_id>/upload', methods=['POST'])
 def upload_arquivo(pedido_id):
-    from flask import current_app
     user_id = request.headers.get('X-User-Id')
     if not user_id:
         return jsonify({'message': 'Usuário não autenticado.'}), 401
@@ -269,7 +240,6 @@ def upload_arquivo(pedido_id):
     if file.filename == '':
         return jsonify({'message': 'Arquivo sem nome.'}), 400
 
-    # Caminho onde o arquivo será salvo
     upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f'pedido_{pedido_id}')
     os.makedirs(upload_dir, exist_ok=True)
     full_path =  os.path.join(upload_dir, file.filename)
@@ -277,7 +247,6 @@ def upload_arquivo(pedido_id):
 
     relative_path = f'pedido_{pedido_id}/{file.filename}' 
 
-    # (Opcional) registrar esse upload no banco, em uma tabela "Arquivos"
     novo_arquivo = Arquivo(
         pedido_id=pedido_id,
         nome=file.filename,
@@ -289,7 +258,6 @@ def upload_arquivo(pedido_id):
     db.session.commit()
 
     return jsonify({'message': 'Arquivo enviado com sucesso!'}), 200
-
 
 @pedidos_bp.route('/<int:pedido_id>/arquivos', methods=['GET'])
 def listar_arquivos(pedido_id):
@@ -308,24 +276,16 @@ def listar_arquivos(pedido_id):
             'nome': a.nome,
             'legenda': a.legenda,
             'data_envio': a.data_envio.strftime('%d/%m/%Y %H:%M'),
-            'url': url_visualizacao  # 👈 AGORA A URL ESTÁ CORRETA
+            'url': url_visualizacao
         })
         
     return jsonify(lista_de_arquivos)
 
-
-
-# novas coisas:
-
 @pedidos_bp.route('/uploads/view/<path:filename>', methods=['GET'])
 def servir_arquivo(filename):
-    """
-    Esta rota serve os arquivos para VISUALIZAÇÃO (sem forçar download).
-    'filename' será o caminho relativo (ex: "pedido_4/teste01.png")
-    """
+    """Esta rota serve os arquivos para VISUALIZAÇÃO."""
     upload_folder = current_app.config['UPLOAD_FOLDER']
     try:
-        # Entrega o arquivo para o navegador
         return send_from_directory(
             upload_folder,
             filename
@@ -335,13 +295,16 @@ def servir_arquivo(filename):
 
 @pedidos_bp.route('/uploads/download/<path:filename>', methods=['GET'])
 def download_uploaded_file(filename):
+    """Esta rota serve os arquivos para DOWNLOAD."""
     upload_folder = current_app.config['UPLOAD_FOLDER']
     try:
         return send_from_directory(
             upload_folder,
             filename,
-            as_attachment=True  # <- força o download
+            as_attachment=True # <- força o download
         )
     except FileNotFoundError:
         return jsonify({'message': 'Arquivo não encontrado.'}), 404
-
+#
+# --- FIM DAS NOVAS FUNCIONALIDADES DELES ---
+#

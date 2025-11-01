@@ -1,0 +1,31 @@
+# Ambiente Virtual
+.venv/
+venv/
+
+# Arquivos de cache do Python
+__pycache__/
+*.pyc
+
+# Arquivos de configuração de IDEs (ex: VS Code)
+.vscode/
+
+# Arquivos de variáveis de ambiente (NUNCA envie senhas!)
+.env
+
+# Pasta de instância do Flask
+instance/
+
+# Pastas de build do PyInstaller
+/build/
+/dist/
+
+# Arquivo .spec do PyInstaller
+*.spec
+
+# Ambiente virtual (Você NUNCA deve enviar isso)
+/venv/
+/.venv/
+
+# Arquivos de cache do Python
+__pycache__/
+*.pyc
