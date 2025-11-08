@@ -57,10 +57,11 @@ def create_app():
     # 3. CRIAMOS AS TABELAS NO BANCO DE DADOS
     # Este bloco de código lê seus models.py e cria as tabelas no arquivo site.db
     with app.app_context():
+        #db.drop_all() #descomente essa linha caso precise recriar o banco de dados
         db.create_all()
         print("Banco de dados inicializado e tabelas criadas (se necessário).")
 
-    # Rota de status (mantida)
+    
     @app.route('/status', methods=['GET'])
     def status_check():
         return jsonify({'status': 'online', 'message': 'Backend online e pronto!'}), 200

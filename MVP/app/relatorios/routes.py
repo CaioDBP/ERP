@@ -83,6 +83,12 @@ def export_planilha():
     return send_file(temp_filepath, as_attachment=True, download_name=excel_filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
+import json
+import openpyxl
+from datetime import datetime
+import os
+from flask import send_file, after_this_request, jsonify, request, current_app
+
 @relatorios_bp.route('/export-selected-pedidos', methods=['POST'])
 def export_selected_pedidos():
     user_id = request.headers.get('X-User-Id')
@@ -95,7 +101,6 @@ def export_selected_pedidos():
     if not selected_pedido_ids:
         return jsonify({'message': 'Nenhum ID de pedido selecionado.'}), 400
 
-    # Usamos o operador 'in_' para buscar múltiplos IDs de uma só vez
     pedidos_para_exportar = Pedido.query.filter(
         Pedido.id.in_(selected_pedido_ids),
         Pedido.user_id == user_id
@@ -104,27 +109,93 @@ def export_selected_pedidos():
     if not pedidos_para_exportar:
         return jsonify({'message': 'Nenhum pedido encontrado com os IDs fornecidos.'}), 404
 
-    # ... (O restante da lógica de criar e enviar o arquivo Excel continua igual)
     excel_data_list = [p.to_dict() for p in pedidos_para_exportar]
-    # Simplificação da criação do excel
+
+    # Criar planilha
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Pedidos Selecionados"
-    headers = list(excel_data_list[0].keys()) if excel_data_list else []
-    if headers: sheet.append(headers)
-    for item in excel_data_list: sheet.append([item.get(h, '') for h in headers])
 
-    excel_filename = f"pedidos_selecionados_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    # Cabeçalhos desejados
+    headers = ["clienteNome", "dataEvento", "produto", "quantidade_item", "quantidade_total_pedido"]
+    sheet.append(headers)
+
+    from openpyxl.styles import Font
+
+    # Deixar o cabeçalho em negrito
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+
+    # Ajustar largura das colunas 
+    col_widths = {
+        "A": 25,  
+        "B": 15, 
+        "C": 45,  
+        "D": 18,  
+        "E": 25   
+    }
+    for col, width in col_widths.items():
+        sheet.column_dimensions[col].width = width
+
+
+    # Montar as linhas da planilha
+    for pedido in excel_data_list:
+        cliente_nome = pedido.get("clienteNome", "")
+        data_evento = pedido.get("dataEvento", "")
+        produtos_json = pedido.get("produtosContratadosJson", "[]")
+
+        try:
+            produtos = json.loads(produtos_json)
+        except Exception as e:
+            print(f"Erro ao ler JSON de produtos: {e}")
+            produtos = []
+
+        # Somar todas as quantidades do pedido
+        try:
+            quantidade_total = sum(int(prod["Quantidade"]) for prod in produtos)
+        except Exception:
+            quantidade_total = 0
+
+        # Adicionar cada produto — só a primeira linha mostra dados do cliente
+        for idx, produto in enumerate(produtos):
+            if idx == 0:
+                linha = [
+                    cliente_nome,
+                    data_evento,
+                    produto.get("Produto", ""),
+                    produto.get("Quantidade", ""),
+                    quantidade_total
+                ]
+            else:
+                linha = [
+                    "",  # clienteNome em branco
+                    "",  # dataEvento em branco
+                    produto.get("Produto", ""),
+                    produto.get("Quantidade", ""),
+                    ""   # total em branco
+                ]
+            sheet.append(linha)
+
+    # Salvar o arquivo Excel
+    excel_filename = f"pedidos_selecionados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     temp_filepath = os.path.join(current_app.config.get('UPLOAD_FOLDER'), excel_filename)
     workbook.save(filename=temp_filepath)
 
+    # Remover o arquivo depois de enviar
     @after_this_request
     def remove_file(response):
-        try: os.remove(temp_filepath)
-        except Exception as e: print(f"Erro ao remover arquivo temporário: {e}")
+        try:
+            os.remove(temp_filepath)
+        except Exception as e:
+            print(f"Erro ao remover arquivo temporário: {e}")
         return response
-        
-    return send_file(temp_filepath, as_attachment=True, download_name=excel_filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    return send_file(
+        temp_filepath,
+        as_attachment=True,
+        download_name=excel_filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 @relatorios_bp.route('', methods=['GET'])
 def get_relatorios():

@@ -71,17 +71,33 @@ def create_pedido():
     # ALTERAÇÃO QUE SALVA TODAS AS "DATAEVENTO" NO FORMATO YYYY-MM-DD
 
     print("antes da formatacao", type(data["dataEvento"]))
+
+    def conversao(data):
+        dias = data[0:2]
+        mes = data[3:5]
+        ano = data[6:10]
+        dataEvento = ano + "-" + mes +"-"+dias
+        data = dataEvento
+        return dataEvento
+    data1 = data["dataEvento"]
+    data2 = data["dataRetirada"]
+    print("data1:",data1, "data2:", data2)
+
+    data["dataEvento"] = conversao(data1)
+    data["dataRetirada"] = conversao(data2)
+
+
     
-    # dataEvento = datetime.strptime(data['dataEvento'], '%d-%m-%Y').date()
-    dataEvento = data["dataEvento"]
-    # dataEvento = slice(dataEvento)
-    # print(dataEvento)
-    dias = dataEvento[0:2]
-    mes = dataEvento[3:5]
-    ano = dataEvento[6:10]
-    dataEvento = ano + "-" + mes +"-"+dias
-    data["dataEvento"] = dataEvento
-    # print(data["dataEvento"])
+    # # dataEvento = datetime.strptime(data['dataEvento'], '%d-%m-%Y').date()
+    # dataEvento = data["dataEvento"]
+    # # dataEvento = slice(dataEvento)
+    # # print(dataEvento)
+    # dias = dataEvento[0:2]
+    # mes = dataEvento[3:5]
+    # ano = dataEvento[6:10]
+    # dataEvento = ano + "-" + mes +"-"+dias
+    # data["dataEvento"] = dataEvento
+    # # print(data["dataEvento"])
 
 
 
