@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 import openpyxl
 import json
-from flask import Blueprint, request, jsonify, current_app, send_file, after_this_request
+from flask import Blueprint, request, jsonify, current_app, send_file, after_this_request, render_template
 from app import db
 from app.models import Pedido
 from app.Extractor import gerar_relatorio_entrega
@@ -294,46 +294,46 @@ def generate_delivery_report(pedido_id):
 
     except Exception as e:
         return jsonify({'message': f"Erro ao gerar o comprovante: {str(e)}"}), 500
-# @relatorios_bp.route('/generate-delivery-report/<int:pedido_id>', methods=['GET'])
-# def generate_delivery_report(pedido_id):
-#     user_id = request.headers.get('X-User-Id')
-#     if not user_id:
-#         return jsonify({'message': 'Usuário não autenticado.'}), 401
 
-#     # Substituímos o loop inteiro por uma única consulta ao banco
-#     pedido_encontrado = Pedido.query.filter_by(id=pedido_id, user_id=user_id).first()
 
-#     if not pedido_encontrado:
-#         return jsonify({'message': 'Pedido não encontrado ou não autorizado.'}), 404
 
-#     # A lógica de mapeamento para o gerador de DOCX continua a mesma,
-#     # mas agora acessamos atributos do objeto (ex: pedido_encontrado.clienteNome)
-#     # em vez de usar .get() em um dicionário.
-#     dados_para_relatorio = pedido_encontrado.to_dict() # Usamos nosso to_dict para facilitar!
-    
-#     # A função de gerar o docx precisa de um formato específico, então vamos mapear
-#     contratante_info = {'Nome': dados_para_relatorio.get('clienteNome'), 'RG': dados_para_relatorio.get('clienteRG'), 'CPF': dados_para_relatorio.get('clienteCPF')}
-#     produtos_list = json.loads(dados_para_relatorio.get('produtosContratadosJson', '[]'))
-    
-#     dados_formatados = {
-#         'Contratante': contratante_info,
-#         'Produtos Contratados': produtos_list,
-#         # Adicione outros campos que a função gerar_relatorio_entrega precise
-#     }
+#================ Logica da pagina de relatorios ===========================#
 
-#     report_filename = f"comprovante_retirada_{pedido_id}.docx"
-#     temp_filepath = os.path.join(current_app.config.get('UPLOAD_FOLDER'), report_filename)
-    
-#     try:
-#         gerar_relatorio_entrega(dados_formatados, nome_arquivo=temp_filepath)
-        
-#         @after_this_request
-#         def remove_file(response):
-#             try: os.remove(temp_filepath)
-#             except Exception as e: print(f"Erro ao remover arquivo temporário: {e}")
-#             return response
-        
-#         return send_file(temp_filepath, as_attachment=True, download_name=report_filename, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+@relatorios_bp.route('/relatorios')
+def dashboard():
 
-#     except Exception as e:
-#         return jsonify({'message': f"Erro ao gerar o comprovante: {str(e)}"}), 500
+    total_pedidos = 47
+    produto_mais_pedido = "Doces Finos"
+    receita_total = {"valor": 20000}
+    pedidos_pendentes = 8
+
+    pedidos_mensais = [12, 19, 15, 25, 32, 28]
+    categorias = {
+        "Doces Finos": 40,
+        "Bem-casados": 25,
+        "Bolos": 20,
+        "Salgados": 15
+    }
+    top_clientes = {
+        "Maria S.": 8,
+        "João P.": 6,
+        "Ana C.": 5,
+        "Pedro L.": 4,
+        "Carla M.": 3
+    }
+    comparativo = {
+        "2025": [12, 19, 15, 25, 32, 28],
+        "2024": [8, 14, 12, 18, 24, 22]
+    }
+
+    return render_template(
+        'relatorios.html',
+        total_pedidos=total_pedidos,
+        produto_mais_pedido=produto_mais_pedido,
+        receita_total=receita_total,
+        pedidos_pendentes=pedidos_pendentes,
+        pedidos_mensais=pedidos_mensais,
+        categorias=categorias,
+        top_clientes=top_clientes,
+        comparativo=comparativo
+    )
