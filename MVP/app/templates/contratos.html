@@ -159,62 +159,148 @@ function cancelarExtracao(){ removerArquivo(); }
 
 // --- FUNÇÃO DE ANÁLISE (Inalterada) ---
 async function analisarContrato(tipo_analise) {
-    const file = fileInput.files[0]; // (Usa o 'fileInput' correto)
-    if(!file){ alert('Selecione um arquivo antes.'); return; }
+    const file = fileInput.files[0];
+    if (!file) { alert('Selecione um arquivo antes.'); return; }
 
     const userId = localStorage.getItem('userId');
-    if(!userId){ alert('Você precisa estar logado para analisar um contrato.'); return; }
+    if (!userId) { alert('Você precisa estar logado para analisar um contrato.'); return; }
 
-    previewCard.style.display='block';
-    document.getElementById('loadingExtraction').style.display='block';
-    document.getElementById('extractedData').style.display='none';
+    previewCard.style.display = 'block';
+    document.getElementById('loadingExtraction').style.display = 'block';
+    document.getElementById('extractedData').style.display = 'none';
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('tipo_analise', tipo_analise); 
+    formData.append('tipo_analise', tipo_analise);
 
     try {
         const response = await fetch('/api/contracts/upload', {
-            method:'POST',
+            method: 'POST',
             headers: { 'X-User-Id': userId },
             body: formData
         });
-        const result = await response.json();
-        document.getElementById('loadingExtraction').style.display='none';
 
-        if(response.ok) {
-            extractedDataGlobal = result.extractedData;
-            
-            // (O mapeamento de dados permanece o mesmo)
-            document.getElementById('clienteNome').textContent = extractedDataGlobal.Contratante.Nome || 'N/A';
-            document.getElementById('clienteCPF').textContent = extractedDataGlobal.Contratante.CPF || 'N/A';
-            document.getElementById('clienteTelefone').textContent = extractedDataGlobal.Contratante.Telefone || 'N/A';
-            document.getElementById('clienteEmail').textContent = extractedDataGlobal.Contratante.Email || 'N/A';
-            document.getElementById('dataEvento').textContent = extractedDataGlobal.Data_do_Evento || 'N/A';
-            document.getElementById('localEvento').textContent = extractedDataGlobal.Local_do_Evento || 'N/A';
-            document.getElementById('dataPagamento').textContent = extractedDataGlobal.Data_de_Pagamento || 'N/A';
-            document.getElementById('valorTotal').textContent = extractedDataGlobal.Valor_Total_do_Pedido || 'N/A';
-            document.getElementById('formaPagamento').textContent = extractedDataGlobal.FormaDePagamento || 'N/A';
-            
-            let produtosTexto = 'N/A';
-            if (extractedDataGlobal.produtosContratadosJson && extractedDataGlobal.produtosContratadosJson !== '[]') {
-                try {
-                    produtosTexto = JSON.parse(extractedDataGlobal.produtosContratadosJson)
-                                        .map(p => `${p.Quantidade}x ${p.Produto}`)
-                                        .join(', ');
-                } catch(e) { console.error("Erro ao parsear JSON de produtos:", e); }
-            }
-            document.getElementById('produtosContratados').textContent = produtosTexto;
-            
-            document.getElementById('extractedData').style.display='block';
-        } else {
-            alert(result.message || 'Erro ao analisar contrato.');
+        // Log de headers + status
+        console.debug('[DEBUG] Resposta do servidor:', response.status, response.statusText);
+        console.debug('[DEBUG] Content-Type:', response.headers.get('content-type'));
+
+        // Tentar parse JSON com fallback para texto bruto para debugar
+        let result;
+        try {
+            result = await response.json();
+        } catch (jsonErr) {
+            console.error('[ERROR] resposta não-JSON:', jsonErr);
+            const raw = await response.text();
+            console.error('[ERROR] resposta bruta do servidor:', raw);
+            document.getElementById('loadingExtraction').style.display = 'none';
+            alert('Resposta do servidor em formato inesperado. Veja console (Network -> Response) para o conteúdo bruto.');
+            return;
         }
-    } catch(error) {
-        console.error('Erro ao analisar contrato:', error);
-        alert('Erro de conexão com o servidor.');
+
+        console.debug('[DEBUG] Payload recebido:', result);
+
+        if (!response.ok) {
+            // mostra mensagem do backend se existir
+            const msg = result && result.message ? result.message : 'Erro ao analisar contrato.';
+            alert(msg);
+            document.getElementById('loadingExtraction').style.display = 'none';
+            return;
+        }
+
+        // Normaliza a estrutura retornada para um formato previsível
+        let data = result.extractedData || {};
+        // Se o backend enviou produtos como JSON string, tenta parse
+        if (data.produtosContratadosJson && typeof data.produtosContratadosJson === 'string') {
+            try {
+                data.produtosContratadosJson = JSON.parse(data.produtosContratadosJson);
+            } catch (e) {
+                console.warn('[WARN] não foi possível parsear produtosContratadosJson:', e);
+                // tenta detectar se é uma string com lista entre chaves
+                data.produtosContratadosJson = [];
+            }
+        }
+
+        // Compatibilização PADRÃO <-> SISTEMA
+        // Se veio no formato "Cliente/CPF/Telefone" (padrão), converte para "Contratante" esperado
+        if (!data.Contratante && (data.Cliente || data.CPF || data.Telefone)) {
+            data.Contratante = {
+                Nome: data.Cliente || 'N/A',
+                CPF: data.CPF || 'N/A',
+                Telefone: data.Telefone || 'N/A',
+                RG: data.RG || 'N/A',
+                Email: data.Email || 'N/A',
+                Endereco: data.Endereco || 'N/A'
+            };
+        }
+
+        // Se ainda não houver produtos como array, tenta normalizar
+        if (!Array.isArray(data.produtosContratadosJson)) {
+            // pode ser que backend devolveu lista em outra chave; tenta detectar
+            if (Array.isArray(data.Produtos) || Array.isArray(data['Produtos Contratados'])) {
+                data.produtosContratadosJson = data.Produtos || data['Produtos Contratados'];
+            } else {
+                // fallback para []
+                data.produtosContratadosJson = [];
+            }
+        }
+
+        // Guarda globalmente para salvar depois
+        extractedDataGlobal = data;
+
+        // Agora atualiza o DOM com segurança (checagens defensivas)
+        const get = (obj, path, fallback='N/A') => {
+            try {
+                const parts = path.split('.');
+                let cur = obj;
+                for (const p of parts) {
+                    if (!cur) return fallback;
+                    cur = cur[p];
+                }
+                return (cur === undefined || cur === null) ? fallback : cur;
+            } catch (e) { return fallback; }
+        };
+
+        document.getElementById('clienteNome').textContent = get(data, 'Contratante.Nome');
+        document.getElementById('clienteCPF').textContent = get(data, 'Contratante.CPF');
+        document.getElementById('clienteTelefone').textContent = get(data, 'Contratante.Telefone');
+        document.getElementById('clienteEmail').textContent = get(data, 'Contratante.Email');
+        document.getElementById('dataEvento').textContent = get(data, 'Data_do_Evento') || get(data, 'Data do Evento');
+        document.getElementById('localEvento').textContent = get(data, 'Local_do_Evento') || get(data, 'Local do Evento');
+        document.getElementById('dataPagamento').textContent = get(data, 'Data_de_Pagamento') || get(data, 'Data de Pagamento');
+        document.getElementById('valorTotal').textContent = get(data, 'Valor_Total_do_Pedido') || get(data, 'Valor Total do Pedido');
+        document.getElementById('formaPagamento').textContent = get(data, 'FormaDePagamento');
+
+        // Produtos
+        let produtosTexto = 'N/A';
+        try {
+            if (Array.isArray(data.produtosContratadosJson) && data.produtosContratadosJson.length) {
+                produtosTexto = data.produtosContratadosJson
+                    .map(p => {
+                        // tenta extrair campos conhecidos com tolerância de nomes
+                        const q = p.Quantidade || p.quantidade || 'N/A';
+                        const nome = p.Produto || p.Produto || p.produto || p.Produto || p.Produto || p.Produto || (p.Produto === undefined ? JSON.stringify(p) : '');
+                        return `${q}x ${nome}`.trim();
+                    })
+                    .join(', ');
+            }
+        } catch (e) {
+            console.error('[ERROR] Ao montar string de produtos:', e);
+            produtosTexto = 'N/A';
+        }
+
+        document.getElementById('produtosContratados').textContent = produtosTexto;
+
+        document.getElementById('loadingExtraction').style.display = 'none';
+        document.getElementById('extractedData').style.display = 'block';
+
+    } catch (error) {
+        console.error('Erro ao analisar contrato (fetch):', error);
+        document.getElementById('loadingExtraction').style.display = 'none';
+        alert('Erro de conexão com o servidor. Veja console para detalhes.');
     }
 }
+
+
 
 // --- FUNÇÃO DE SALVAR PEDIDO (Inalterada) ---
 async function salvarPedido() {
