@@ -59,10 +59,11 @@
             <div class="card-header"><h3 class="card-title">Produtos e Valores</h3></div>
             <div class="card-body">
                 <div id="produtosContainer">
-                    </div>
-                <button type="button" class="btn btn-secondary" onclick="adicionarProduto()">
+                </div>
+                <button type="button" class="btn btn-secondary" id="btnAdicionarProduto">
                     <i class="fas fa-plus"></i> Adicionar Produto
                 </button>
+                <div id="totalGeral" style="margin-top:1rem; font-weight:600;">Total Geral: R$ 0.00</div>
             </div>
         </div>
     </div>
@@ -90,22 +91,59 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('novoPedidoForm');
     const produtosContainer = document.getElementById('produtosContainer');
 
+    const totalGeralEl = document.getElementById('totalGeral');
+    const btnAdicionarProduto = document.getElementById('btnAdicionarProduto');
+
+    function atualizarTotalGeral() {
+        let soma = 0;
+        document.querySelectorAll('.produto-item').forEach(item => {
+            soma += parseFloat(item.querySelector('.valor-total').value) || 0;
+        });
+        totalGeralEl.textContent = 'Total Geral: R$ ' + soma.toFixed(2);
+    }
+
     window.adicionarProduto = function() {
         const produtoItem = document.createElement('div');
         produtoItem.className = 'produto-item';
         produtoItem.innerHTML = `
-            <button type="button" class="btn-icon btn-danger remove-produto-btn" onclick="this.parentElement.remove()">
+            <button type="button" class="btn-icon btn-danger remove-produto-btn">
                 <i class="fas fa-trash"></i>
             </button>
             <div class="form-grid">
-                <div class="form-group"><label class="form-label">Produto</label><input type="text" class="form-input produto-nome" placeholder="Nome do produto"></div>
-                <div class="form-group"><label class="form-label">Quantidade</label><input type="number" class="form-input" min="1" value="1"></div>
-                <div class="form-group"><label class="form-label">Valor Unitário (R$)</label><input type="number" class="form-input" min="0" step="0.01" placeholder="0.00"></div>
-                <div class="form-group"><label class="form-label">Valor Total (R$)</label><input type="number" class="form-input valor-total" readonly></div>
+                <div class="form-group"><label class="form-label">Produto</label><input type="text" name="produtos[][nome]" class="form-input produto-nome" placeholder="Nome do produto" required></div>
+                <div class="form-group"><label class="form-label">Quantidade</label><input type="number" name="produtos[][quantidade]" class="form-input produto-quantidade" min="1" value="1" required></div>
+                <div class="form-group"><label class="form-label">Valor Unitário (R$)</label><input type="number" name="produtos[][valor_unitario]" class="form-input produto-valor-unit" min="0" step="0.01" value="0.00" required></div>
+                <div class="form-group"><label class="form-label">Valor Total (R$)</label><input type="number" name="produtos[][valor_total]" class="form-input valor-total" readonly value="0.00"></div>
             </div>
         `;
         produtosContainer.appendChild(produtoItem);
+
+        const btnRemove = produtoItem.querySelector('.remove-produto-btn');
+        btnRemove.addEventListener('click', () => {
+            produtoItem.remove();
+            atualizarTotalGeral();
+        });
+
+        const qtdInput = produtoItem.querySelector('.produto-quantidade');
+        const unitInput = produtoItem.querySelector('.produto-valor-unit');
+        const valorTotalInput = produtoItem.querySelector('.valor-total');
+
+        function recalcularItem() {
+            const qtd = parseFloat(qtdInput.value) || 0;
+            const unit = parseFloat(unitInput.value) || 0;
+            const total = qtd * unit;
+            valorTotalInput.value = total.toFixed(2);
+            atualizarTotalGeral();
+        }
+
+        qtdInput.addEventListener('input', recalcularItem);
+        unitInput.addEventListener('input', recalcularItem);
+        // inicializar calculo
+        recalcularItem();
     }
+
+    // interligar botão adicionar (ao invés de onclick inline)
+    btnAdicionarProduto.addEventListener('click', window.adicionarProduto);
 
     // Adiciona a primeira linha ao carregar
     adicionarProduto();
@@ -121,20 +159,27 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData(form);
         const pedidoData = Object.fromEntries(formData.entries());
 
-        let totalQuantidade = 0;
-        const nomesProdutos = [];
-        document.querySelectorAll('.produto-item').forEach(item => {
-            const nome = item.querySelector('.produto-nome').value;
-            const qtd = parseInt(item.querySelectorAll('input[type="number"]')[0].value, 10) || 0;
-            
-            if (nome) {
-                nomesProdutos.push(nome);
-            }
-            totalQuantidade += qtd;
-        });
+        // montar array de produtos do DOM com tipos corretos
+        const produtos = Array.from(document.querySelectorAll('.produto-item')).map(item => {
+            const nome = item.querySelector('.produto-nome').value.trim();
+            const quantidade = parseInt(item.querySelector('.produto-quantidade').value, 10) || 0;
+            const valor_unitario = parseFloat(item.querySelector('.produto-valor-unit').value) || 0;
+            const valor_total = parseFloat(item.querySelector('.valor-total').value) || 0;
+            return { nome, quantidade, valor_unitario, valor_total };
+        }).filter(p => p.nome || p.quantidade > 0);
 
+        // validações simples
+        const totalQuantidade = produtos.reduce((s, p) => s + p.quantidade, 0);
+        const valorTotalGeral = produtos.reduce((s, p) => s + p.valor_total, 0);
+        if (produtos.length === 0 || totalQuantidade === 0) {
+            alert('Adicione pelo menos um produto com quantidade válida.');
+            return;
+        }
+
+        pedidoData.produtos = produtos;
         pedidoData.quantidade = totalQuantidade;
-        pedidoData.sabores = nomesProdutos.join(', ');
+        pedidoData.valor_total = parseFloat(valorTotalGeral.toFixed(2));
+        pedidoData.sabores = produtos.map(p => p.nome).filter(Boolean).join(', ');
 
         try {
             const response = await fetch('/api/pedidos/cadastro', {

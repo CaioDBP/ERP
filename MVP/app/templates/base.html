@@ -13,7 +13,7 @@
     <div class="app-container">
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h1 class="logo">DoceSystem</h1>
+                <h1 class="logo">MVP</h1>
                 <button class="sidebar-toggle" id="sidebarToggle">
                     <i class="fas fa-bars"></i>
                 </button>
@@ -43,9 +43,9 @@
                     <i class="fas fa-file-excel"></i>
                     <span>Exportar</span>
                 </a>
-                <a href="/calculadora" class="nav-item {% if request.path == '/calculadora' %}active{% endif %}">
-                    <i class="fas fa-calculator"></i>
-                    <span>Calculadora</span>
+                <a class="nav-item {% if request.path == '/calculadora' %}active{% endif %}">
+                    <!-- <i class="fas fa-calculator"></i> -->
+                    <span></span>
                 </a>
             </nav>
             <div class="sidebar-footer">
@@ -54,13 +54,13 @@
                         <i class="fas fa-user"></i>
                     </div>
                     <div class="user-details">
-                        <span class="user-name">Admin User</span>
-                        <span class="user-role">Administrador</span>
+                        <span class="user-name">Damaris</span>
+                        <span class="user-role">Usuário</span>
                     </div>
                 </div>
                 <a href="/login" class="logout-btn">
                     <i class="fas fa-sign-out-alt"></i>
-                    <span>Sair</span>
+                    <span>  Sair</span>
                 </a>
             </div>
         </aside>
