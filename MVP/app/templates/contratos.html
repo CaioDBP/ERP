@@ -308,9 +308,10 @@ async function salvarPedido() {
     const userId = localStorage.getItem('userId');
     if(!userId){ alert('Você precisa estar logado para salvar um pedido.'); return; }
 
-    const produtos = JSON.parse(extractedDataGlobal.produtosContratadosJson || '[]');
-    const quantidadeTotal = produtos.reduce((sum, item) => sum + parseInt(item.Quantidade || 0), 0);
-    const sabores = produtos.map(p => p.Produto).join(', ');
+    // Agora garantimos que produtosContratadosJson já é um array
+    const produtos = extractedDataGlobal.produtosContratadosJson || [];
+    const quantidadeTotal = produtos.reduce((sum, item) => sum + (parseInt(item.Quantidade) || 0), 0);
+    const sabores = produtos.map(p => p.Produto || p.produto || 'N/A').join(', ');
 
     const pedidoPayload = {
         clienteNome: extractedDataGlobal.Contratante.Nome,
@@ -318,7 +319,7 @@ async function salvarPedido() {
         clienteCPF: extractedDataGlobal.Contratante.CPF,
         dataEvento: extractedDataGlobal.Data_do_Evento,
         localEvento: extractedDataGlobal.Local_do_Evento,
-        produtosContratadosJson: extractedDataGlobal.produtosContratadosJson,
+        produtosContratadosJson: JSON.stringify(extractedDataGlobal.produtosContratadosJson),
         valorTotalPedidoContrato: extractedDataGlobal.Valor_Total_do_Pedido,
         dataPagamentoContrato: extractedDataGlobal.Data_de_Pagamento,
         quantidade: quantidadeTotal,
