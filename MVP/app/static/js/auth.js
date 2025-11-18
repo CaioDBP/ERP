@@ -51,54 +51,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-
-    // --- LÓGICA DO FORMULÁRIO DE CADASTRO ---
-    const registerForm = document.getElementById('registerForm');
-    if (registerForm) {
-        registerForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const password = document.getElementById('password').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
-            
-            if (password !== confirmPassword) {
-                alert('As senhas não coincidem!');
-                return;
-            }
-
-            const form = e.target;
-            const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
-            
-            const registerError = document.getElementById('register-error');
-            const registerSuccess = document.getElementById('register-success');
-
-            try {
-                const response = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    registerError.style.display = 'none';
-                    registerSuccess.textContent = result.message + ' Por favor, faça login para continuar.';
-                    registerSuccess.style.display = 'block';
-                    form.reset(); // Limpa o formulário
-                } else {
-                    registerSuccess.style.display = 'none';
-                    registerError.textContent = result.message || 'Erro ao cadastrar.';
-                    registerError.style.display = 'block';
-                }
-            } catch (error) {
-                registerSuccess.style.display = 'none';
-                registerError.textContent = 'Erro de conexão com o servidor.';
-                registerError.style.display = 'block';
-            }
-        });
-    }
+    // Registration disabled in UI; register form handler removed to prevent client-side registrations.
     
 
 

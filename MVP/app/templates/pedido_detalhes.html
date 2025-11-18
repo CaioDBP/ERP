@@ -533,39 +533,42 @@ DoceSystem{% endblock %} {% block content %}
       // utilitários
       function formatDateDisplay(iso) {
         if (!iso) return "—";
-        // aceita YYYY-MM-DD ou ISO completo
+        try {
+          const d = new Date(iso);
+          if (!isNaN(d)) return d.toLocaleDateString();
+        } catch (e) {}
+        return iso;
+      }
+
+      function isoFromDisplay(iso) {
+        if (!iso) return "";
+        if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
         try {
           const d = new Date(iso);
           if (!isNaN(d)) {
-            return d.toLocaleDateString();
+            const mm = String(d.getMonth() + 1).padStart(2, "0");
+            const dd = String(d.getDate()).padStart(2, "0");
+            return `${d.getFullYear()}-${mm}-${dd}`;
           }
         } catch (e) {}
-        // fallback: retorna a string original
         return iso;
       }
 
       function daysBetweenToday(isoDateStr) {
         if (!isoDateStr) return null;
-        // tenta interpretar YYYY-MM-DD
         const parts = isoDateStr.split("-");
         let dt;
-        if (parts.length === 3) {
-          dt = new Date(parts[0], parts[1] - 1, parts[2]);
-        } else {
-          dt = new Date(isoDateStr);
-        }
+        if (parts.length === 3) dt = new Date(parts[0], parts[1] - 1, parts[2]);
+        else dt = new Date(isoDateStr);
         if (isNaN(dt)) return null;
         const today = new Date();
-        // zera horas
         const diff = Math.ceil(
-          (dt -
-            new Date(today.getFullYear(), today.getMonth(), today.getDate())) /
+          (dt - new Date(today.getFullYear(), today.getMonth(), today.getDate())) /
             (1000 * 60 * 60 * 24)
         );
         return diff;
       }
 
-      // timeline steps (ordem)
       const TIMELINE_STEPS = [
         { key: "criado", label: "Criado" },
         { key: "confirmado", label: "Confirmado" },
@@ -574,271 +577,444 @@ DoceSystem{% endblock %} {% block content %}
         { key: "entregue", label: "Entregue" },
       ];
 
-      // map status string -> index reached
       function statusToStepIndex(status) {
         if (!status) return 0;
         const s = status.toLowerCase();
-        if (s === "pendente") return 0; // apenas criado
+        if (s === "pendente") return 0;
         if (s === "confirmado") return 1;
-        if (s === "producao" || s === "em producao" || s === "produção")
-          return 2;
+        if (s === "producao" || s === "em producao" || s === "produção") return 2;
         if (s === "pronto") return 3;
         if (s === "entregue") return 4;
-        // default: assume pendente
         return 0;
       }
 
-      // Seleciona elementos-chave
       const statusMainBadge = document.getElementById("status-main-badge");
-      const proximityBadgeContainer = document.getElementById(
-        "proximity-badge-container"
-      );
+      const proximityBadgeContainer = document.getElementById("proximity-badge-container");
       const timelineContainer = document.getElementById("timeline-container");
       const pagePedidoId = document.getElementById("page-pedido-id");
       const pageSubtitle = document.getElementById("page-subtitle");
       const breadcrumbIdSpan = document.getElementById("page-breadcrumb-id");
-
-      // detalhes
       const el = (id) => document.getElementById(id);
 
-      // Pega ID do caminho /pedidos/<id>
       const path = window.location.pathname;
       const match = path.match(/\/pedidos\/(\d+)/);
-      if (!match) {
-        console.error("Impossível determinar pedidoId a partir da URL.");
-        return;
-      }
+      if (!match) return console.error("Impossível determinar pedidoId a partir da URL.");
       const pedidoId = match[1];
       pagePedidoId.innerText = `#${pedidoId}`;
       breadcrumbIdSpan.innerText = `Detalhes #${pedidoId}`;
 
-      // botões principais
       const btnEditar = document.getElementById("btn-editar");
-      const btnGerarComprovante = document.getElementById(
-        "btn-gerar-comprovante"
-      );
+      const btnGerarComprovante = document.getElementById("btn-gerar-comprovante");
       const btnCancelar = document.getElementById("btn-cancelar");
 
-      // funções dos botões (mantive comportamento simples / integrando rotas existentes)
-      btnEditar &&
-        btnEditar.addEventListener("click", () => {
-          // abre modo edição — vamos reutilizar a página de edição futura; por enquanto, navega para /pedidos/<id>/editar se desejar
-          window.location.href = `/pedidos/${pedidoId}/editar`;
+      // mapeamento dos campos editáveis (id do elemento -> chave do modelo)
+      const editableFields = {
+        "detalhe-cliente-nome": "clienteNome",
+        "detalhe-cliente-telefone": "clienteTelefone",
+        "detalhe-cliente-email": "clienteEmail",
+        "detalhe-cliente-rg": "clienteRG",
+        "detalhe-cliente-cpf": "clienteCPF",
+        "detalhe-observacoes-gerais-cliente": "observacoes",
+        "detalhe-nome-contratado": "nomeContratado",
+        "detalhe-cnpj-contratado": "cnpjContratado",
+        "detalhe-local-evento": "localEvento",
+        "detalhe-valor-total-contrato": "valorTotalPedidoContrato",
+        "detalhe-data-pagamento-contrato": "dataPagamentoContrato",
+        "detalhe-tipo-pedido": "tipoPedido",
+        "detalhe-data-evento": "dataEvento",
+        "detalhe-data-retirada": "dataRetirada",
+        "detalhe-horario-retirada": "horarioRetirada",
+        "detalhe-quantidade": "quantidade",
+        "detalhe-tipo-embalagem": "tipoEmbalagem",
+        "detalhe-sabores": "sabores",
+        "detalhe-observacoes": "observacoes"
+      };
+
+      let inEditMode = false;
+      const originalValues = {};
+      let originalProductsHTML = null;
+      let addProductButton = null;
+
+      function createSaveCancelButtons() {
+        if (document.getElementById("btn-save")) return;
+        const container = btnEditar.parentElement;
+        const btnSave = document.createElement("button");
+        btnSave.id = "btn-save";
+        btnSave.className = "btn btn-success";
+        btnSave.innerHTML = '<i class="fas fa-save"></i> Salvar';
+        btnSave.style.marginLeft = "0.5rem";
+
+        const btnCancelEdit = document.createElement("button");
+        btnCancelEdit.id = "btn-cancel-edit";
+        btnCancelEdit.className = "btn btn-secondary";
+        btnCancelEdit.innerHTML = '<i class="fas fa-ban"></i> Cancelar';
+        btnCancelEdit.style.marginLeft = "0.5rem";
+
+        container.appendChild(btnSave);
+        container.appendChild(btnCancelEdit);
+
+        btnSave.addEventListener("click", saveEdits);
+        btnCancelEdit.addEventListener("click", () => toggleEditMode(false));
+      }
+
+      function enterEditMode() {
+        if (inEditMode) return;
+        inEditMode = true;
+        createSaveCancelButtons();
+        btnEditar.style.display = "none";
+
+        // transform regular detail fields into inputs
+        Object.keys(editableFields).forEach((elId) => {
+          const dom = el(elId);
+          if (!dom) return;
+          originalValues[elId] = dom.innerText || "";
+          let input;
+          if (elId.includes("data-") || elId === "detalhe-data-evento" || elId === "detalhe-data-retirada" || elId === "detalhe-data-pagamento-contrato") {
+            input = document.createElement("input");
+            input.type = "date";
+            input.value = isoFromDisplay(originalValues[elId]) || "";
+          } else if (elId === "detalhe-quantidade") {
+            input = document.createElement("input");
+            input.type = "number";
+            input.min = "0";
+            input.value = originalValues[elId] === "—" ? "" : originalValues[elId];
+          } else if (elId.includes("observacoes") || elId === "detalhe-sabores") {
+            input = document.createElement("textarea");
+            input.rows = 3;
+            input.value = originalValues[elId] === "—" ? "" : originalValues[elId];
+          } else {
+            input = document.createElement("input");
+            input.type = "text";
+            input.value = originalValues[elId] === "—" ? "" : originalValues[elId];
+          }
+          input.className = "form-control";
+          input.dataset.fieldId = elId;
+          dom.innerText = "";
+          dom.appendChild(input);
         });
 
-      btnGerarComprovante &&
-        btnGerarComprovante.addEventListener("click", async () => {
-          const userId = localStorage.getItem("userId");
-          if (!userId) {
-            showModal &&
-              showModal("Você precisa estar logado para gerar um comprovante.");
-            return;
-          }
-          try {
-            const resp = await fetch(
-              `/api/reports/generate-delivery-report/${pedidoId}`,
-              { method: "GET", headers: { "X-User-Id": userId } }
-            );
-            if (!resp.ok) {
-              const err = await resp.json().catch(() => ({ message: "Erro" }));
-              showModal &&
-                showModal(
-                  "Erro ao gerar comprovante: " + (err.message || resp.status)
-                );
-              return;
+        // ---------- transformar tabela de produtos em modo editavel ----------
+        try {
+          const produtosBody = el("produtos-contratados-table-body");
+          if (produtosBody) {
+            // salvar HTML original para restaurar no cancel
+            originalProductsHTML = produtosBody.innerHTML;
+
+            // helper para criar input em td
+            function makeInput(value, type = "text") {
+              const input = document.createElement("input");
+              input.type = type === "number" ? "number" : "text";
+              input.className = "form-control";
+              input.value = value === undefined || value === null ? "" : value;
+              return input;
             }
-            const blob = await resp.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.style.display = "none";
-            a.href = url;
-            a.download = `comprovante_retirada_${pedidoId}.docx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            showModal && showModal("Comprovante gerado. Download iniciado.");
-          } catch (e) {
-            console.error(e);
-            showModal && showModal("Erro de conexão ao gerar comprovante.");
+
+            // transforma cada linha existente
+            const rows = Array.from(produtosBody.querySelectorAll("tr"));
+            rows.forEach((tr) => {
+              const tds = tr.querySelectorAll("td");
+              const qtd = tds[0] ? (tds[0].innerText || "") : "";
+              const nome = tds[1] ? (tds[1].innerText || "") : "";
+              const valUnit = tds[2] ? (tds[2].innerText || "").replace(/R\$|\s/g, "") : "";
+              const valTotal = tds[3] ? (tds[3].innerText || "").replace(/R\$|\s/g, "") : "";
+
+              tr.innerHTML = "";
+              const tdQtd = document.createElement("td");
+              const inpQtd = makeInput(qtd, "number"); inpQtd.min = 0; tdQtd.appendChild(inpQtd);
+
+              const tdNome = document.createElement("td");
+              const inpNome = makeInput(nome, "text"); tdNome.appendChild(inpNome);
+
+              const tdValUnit = document.createElement("td");
+              const inpValUnit = makeInput(valUnit, "text"); tdValUnit.appendChild(inpValUnit);
+
+              const tdValTotal = document.createElement("td");
+              const inpValTotal = makeInput(valTotal, "text"); inpValTotal.readOnly = true; tdValTotal.appendChild(inpValTotal);
+
+              const tdActions = document.createElement("td");
+              tdActions.style.whiteSpace = 'nowrap';
+              const btnRemove = document.createElement("button"); btnRemove.className = "btn btn-sm btn-danger"; btnRemove.innerText = "Remover";
+              btnRemove.addEventListener('click', () => { tr.remove(); calcTotalGeral(); });
+              tdActions.appendChild(btnRemove);
+
+              tr.appendChild(tdQtd);
+              tr.appendChild(tdNome);
+              tr.appendChild(tdValUnit);
+              tr.appendChild(tdValTotal);
+              tr.appendChild(tdActions);
+
+              // recalcula total quando qtd ou unit mudarem
+              function updateRowTotal() {
+                const q = Number(inpQtd.value) || 0;
+                const vu = parseFloat(String(inpValUnit.value).replace(',', '.')) || 0;
+                const total = q * vu;
+                inpValTotal.value = total ? total.toFixed(2).replace('.', ',') : '';
+                calcTotalGeral();
+              }
+              inpQtd.addEventListener('input', updateRowTotal);
+              inpValUnit.addEventListener('input', updateRowTotal);
+            });
+
+            // adicionar botão para inserir nova linha
+            const parentCard = produtosBody.closest('.card');
+            if (parentCard && !addProductButton) {
+              addProductButton = document.createElement('button');
+              addProductButton.className = 'btn btn-outline-primary';
+              addProductButton.style.margin = '10px 0';
+              addProductButton.innerText = 'Adicionar item';
+              addProductButton.addEventListener('click', () => {
+                const tr = document.createElement('tr'); tr.className = 'produto-row';
+                const tdQtd = document.createElement('td'); const inpQtd = document.createElement('input'); inpQtd.type = 'number'; inpQtd.min = 0; inpQtd.className = 'form-control'; tdQtd.appendChild(inpQtd);
+                const tdNome = document.createElement('td'); const inpNome = document.createElement('input'); inpNome.className = 'form-control'; tdNome.appendChild(inpNome);
+                const tdValUnit = document.createElement('td'); const inpValUnit = document.createElement('input'); inpValUnit.className = 'form-control'; tdValUnit.appendChild(inpValUnit);
+                const tdValTotal = document.createElement('td'); const inpValTotal = document.createElement('input'); inpValTotal.className = 'form-control'; inpValTotal.readOnly = true; tdValTotal.appendChild(inpValTotal);
+                const tdActions = document.createElement('td'); const btnRemove = document.createElement('button'); btnRemove.className = 'btn btn-sm btn-danger'; btnRemove.innerText = 'Remover'; btnRemove.addEventListener('click', () => { tr.remove(); calcTotalGeral(); }); tdActions.appendChild(btnRemove);
+                tr.appendChild(tdQtd); tr.appendChild(tdNome); tr.appendChild(tdValUnit); tr.appendChild(tdValTotal); tr.appendChild(tdActions);
+                produtosBody.appendChild(tr);
+                // bind calc
+                inpQtd.addEventListener('input', () => { const q=Number(inpQtd.value)||0; const vu=parseFloat(String(inpValUnit.value).replace(',', '.'))||0; inpValTotal.value = (q*vu)? (q*vu).toFixed(2).replace('.', ',') : ''; calcTotalGeral(); });
+                inpValUnit.addEventListener('input', () => { const q=Number(inpQtd.value)||0; const vu=parseFloat(String(inpValUnit.value).replace(',', '.'))||0; inpValTotal.value = (q*vu)? (q*vu).toFixed(2).replace('.', ',') : ''; calcTotalGeral(); });
+              });
+              parentCard.insertBefore(addProductButton, parentCard.querySelector('table'));
+            }
+
+            // função para calcular total geral
+            function calcTotalGeral() {
+              const produtosBodyLocal = el('produtos-contratados-table-body');
+              const TotalGeralEl = el('total-geral');
+              let totalG = 0;
+              Array.from(produtosBodyLocal.querySelectorAll('tr')).forEach((r) => {
+                const inps = r.querySelectorAll('input');
+                if (inps.length >= 4) {
+                  const val = String(inps[3].value || '').replace(',', '.');
+                  const n = parseFloat(val) || 0; totalG += n;
+                }
+              });
+              TotalGeralEl.innerText = `R$ ${totalG.toFixed(2).replace('.', ',')}`;
+            }
+            // inicial calcula
+            calcTotalGeral();
+          }
+        } catch (err) {
+          console.error('Erro ao ativar edição de produtos:', err);
+        }
+      }
+
+      function toggleEditMode(enable) {
+        if (enable === undefined) enable = !inEditMode;
+        if (enable) enterEditMode();
+        else {
+          inEditMode = false;
+          Object.keys(editableFields).forEach((elId) => {
+            const dom = el(elId);
+            if (!dom) return;
+            const input = dom.querySelector("input, textarea");
+            const original = originalValues[elId] ?? "";
+            dom.innerText = original || "—";
+          });
+          // restaurar tabela de produtos, se necessário
+          try {
+            const produtosBody = el('produtos-contratados-table-body');
+            if (produtosBody && originalProductsHTML !== null) {
+              produtosBody.innerHTML = originalProductsHTML;
+              originalProductsHTML = null;
+            }
+            if (addProductButton) { addProductButton.remove(); addProductButton = null; }
+            // recalcula exibicao de total caso venha vazio
+            const TotalGeralEl = el('total-geral'); if (TotalGeralEl && TotalGeralEl.innerText.trim() === '') TotalGeralEl.innerText = 'R$ 0,00';
+          } catch (e) { console.error('Erro ao restaurar tabela de produtos:', e); }
+          const btnSave = document.getElementById("btn-save");
+          const btnCancelEdit = document.getElementById("btn-cancel-edit");
+          btnSave && btnSave.remove();
+          btnCancelEdit && btnCancelEdit.remove();
+          btnEditar.style.display = "";
+        }
+      }
+
+      async function saveEdits() {
+        const payload = {};
+        // detecta mapeamentos duplicados que escrevem na mesma chave do modelo
+        const targets = {};
+        Object.keys(editableFields).forEach(k => { const tgt = editableFields[k]; targets[tgt] = (targets[tgt] || 0) + 1; });
+        Object.keys(targets).forEach(t => { if (targets[t] > 1) console.warn('Atenção: vários campos mapeados para o mesmo atributo do modelo:', t); });
+
+        // coletar valores por destino (prioriza valores não vazios quando há duplicados)
+        const valuesByTarget = {};
+        Object.keys(editableFields).forEach((elId) => {
+          const dom = el(elId);
+          if (!dom) return;
+          const input = dom.querySelector("input, textarea");
+          if (!input) return;
+          let value = input.value;
+          if (input.type === "date") value = value || "";
+          if (editableFields[elId] === "quantidade") value = value ? Number(value) : 0;
+          const target = editableFields[elId];
+          // se ainda não existe valor para o target, atribui
+          if (valuesByTarget[target] === undefined || valuesByTarget[target] === "") {
+            valuesByTarget[target] = value;
+          } else {
+            // já existe: se o novo valor for não vazio, sobrescreve (assumimos edição ativa)
+            if (value !== undefined && value !== null && String(value).trim() !== "") {
+              valuesByTarget[target] = value;
+            }
           }
         });
 
-      btnCancelar &&
-        btnCancelar.addEventListener("click", async () => {
-          if (!confirm("Tem certeza que deseja cancelar este pedido?")) return;
-          const motivo = prompt("Digite o motivo do cancelamento (opcional):");
-          // por enquanto apenas marca localmente e redireciona — integração real precisa endpoint de cancelamento
-          showModal &&
-            showModal(
-              "Cancelamento pendente de implementação no backend. Motivo: " +
-                (motivo || "—")
-            );
-        });
+        // agora monta o payload a partir do mapa consolidado
+        Object.keys(valuesByTarget).forEach((t) => { payload[t] = valuesByTarget[t]; });
 
-      // Faz fetch dos dados do pedido e popula a tela
-      async function carregarPedido() {
-        const userId = localStorage.getItem("userId");
-        if (!userId) {
-          showModal && showModal("Usuário não autenticado. Faça login.");
-          return;
+        // incluir produtos contratados serializados
+        try {
+          const produtosBody = el('produtos-contratados-table-body');
+          if (produtosBody) {
+            const produtos = [];
+            Array.from(produtosBody.querySelectorAll('tr')).forEach((tr) => {
+              const inputs = tr.querySelectorAll('input');
+              if (!inputs || inputs.length === 0) return;
+              const quantidade = inputs[0] ? (Number(inputs[0].value) || 0) : 0;
+              const produtoNome = inputs[1] ? inputs[1].value : '';
+              const valorUnitRaw = inputs[2] ? String(inputs[2].value).replace(',', '.') : '';
+              const valorUnit = valorUnitRaw ? String(valorUnitRaw) : '';
+              const valorTotalRaw = inputs[3] ? String(inputs[3].value).replace(',', '.') : '';
+              const valorTotal = valorTotalRaw ? String(valorTotalRaw) : '';
+              produtos.push({
+                'Quantidade': quantidade,
+                'Produto': produtoNome,
+                'Valor Unitário': valorUnit,
+                'Valor Total Item': valorTotal
+              });
+            });
+            payload['produtosContratadosJson'] = JSON.stringify(produtos);
+          }
+        } catch (err) {
+          console.error('Erro ao serializar produtos para salvar:', err);
         }
 
         try {
+          console.log('Salvar pedido - payload:', payload);
+          const userId = localStorage.getItem("userId");
           const resp = await fetch(`/api/pedidos/${pedidoId}`, {
-            method: "GET",
-            headers: { "X-User-Id": userId },
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "X-User-Id": userId
+            },
+            body: JSON.stringify(payload)
           });
-
           if (!resp.ok) {
-            const err = await resp.json().catch(() => ({ message: "Erro" }));
-            console.error("Erro ao carregar pedido:", err);
-            showModal && showModal("Erro: Erro ao carregar dados do pedido");
+            const txt = await resp.text().catch(() => null);
+            let err = null;
+            try { err = txt ? JSON.parse(txt) : null; } catch(e){ err = { message: txt }; }
+            console.error('Erro ao salvar pedido, status:', resp.status, 'body:', txt);
+            alert("Erro ao salvar: " + (err && err.message ? err.message : resp.status));
             return;
           }
+          const result = await resp.json();
+          console.log('Resposta salvar pedido:', result);
+          const updated = result.pedido || payload;
+          Object.keys(editableFields).forEach((elId) => {
+            const dom = el(elId);
+            if (!dom) return;
+            const key = editableFields[elId];
+            let val = updated[key];
+            if (key === "dataEvento" || key === "dataRetirada" || key === "dataPagamentoContrato") {
+              dom.innerText = val ? formatDateDisplay(val) : "—";
+            } else {
+              dom.innerText = val !== undefined && val !== null && val !== "" ? val : "—";
+            }
+          });
+          toggleEditMode(false);
+          carregarPedido();
+        } catch (e) {
+          console.error(e);
+          alert("Erro de conexão ao salvar alterações.");
+        }
+      }
 
+      btnEditar && btnEditar.addEventListener("click", () => { toggleEditMode(true); });
+
+      btnGerarComprovante && btnGerarComprovante.addEventListener("click", async () => {
+        const userId = localStorage.getItem("userId");
+        if (!userId) { showModal && showModal("Você precisa estar logado para gerar um comprovante."); return; }
+        try {
+          const resp = await fetch(`/api/reports/generate-delivery-report/${pedidoId}`, { method: "GET", headers: { "X-User-Id": userId } });
+          if (!resp.ok) { const err = await resp.json().catch(() => ({ message: "Erro" })); showModal && showModal("Erro ao gerar comprovante: " + (err.message || resp.status)); return; }
+          const blob = await resp.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a"); a.style.display = "none"; a.href = url; a.download = `comprovante_retirada_${pedidoId}.docx`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url);
+          showModal && showModal("Comprovante gerado. Download iniciado.");
+        } catch (e) { console.error(e); showModal && showModal("Erro de conexão ao gerar comprovante."); }
+      });
+
+      btnCancelar && btnCancelar.addEventListener("click", async () => {
+        if (!confirm("Tem certeza que deseja cancelar este pedido?")) return;
+        const motivo = prompt("Digite o motivo do cancelamento (opcional):");
+        showModal && showModal("Cancelamento pendente de implementação no backend. Motivo: " + (motivo || "—"));
+      });
+
+      async function carregarPedido() {
+        const userId = localStorage.getItem("userId");
+        if (!userId) { showModal && showModal("Usuário não autenticado. Faça login."); return; }
+        try {
+          const resp = await fetch(`/api/pedidos/${pedidoId}`, { method: "GET", headers: { "X-User-Id": userId } });
+          if (!resp.ok) { const err = await resp.json().catch(() => ({ message: "Erro" })); console.error("Erro ao carregar pedido:", err); showModal && showModal("Erro: Erro ao carregar dados do pedido"); return; }
           const pedido = await resp.json();
-          // console.log('Pedido recebido:', pedido);
-
-          // Subtitulo: cliente + data evento (se existir)
-          pageSubtitle.innerText = `${pedido.clienteNome || "—"} ${
-            pedido.dataEvento ? "– " + formatDateDisplay(pedido.dataEvento) : ""
-          }`;
-
-          // RESPONSÁVEL / createdAt
+          pageSubtitle.innerText = `${pedido.clienteNome || "—"} ${pedido.dataEvento ? "– " + formatDateDisplay(pedido.dataEvento) : ""}`;
           el("responsavel-creator").innerText = pedido.responsavel || "Damaris";
-          el("responsavel-updated").innerText = pedido.createdAt
-            ? new Date(pedido.createdAt).toLocaleString()
-            : "—";
-
-          // STATUS & PROXIMITY
+          el("responsavel-updated").innerText = pedido.createdAt ? new Date(pedido.createdAt).toLocaleString() : "—";
           const st = (pedido.status || "pendente").toLowerCase();
           statusMainBadge.innerText = st.charAt(0).toUpperCase() + st.slice(1);
-          // color class
           statusMainBadge.className = "badge";
-          if (st === "confirmado")
-            statusMainBadge.classList.add("badge-success");
-          else if (st === "pendente")
-            statusMainBadge.classList.add("badge-danger");
-          else if (st === "producao")
-            statusMainBadge.classList.add("badge-warning");
-          else if (st === "pronto")
-            statusMainBadge.classList.add("badge-warning");
-          else if (st === "entregue")
-            statusMainBadge.classList.add("badge-success");
-
-          // proximity badge (dias restantes)
+          if (st === "confirmado") statusMainBadge.classList.add("badge-success"); else if (st === "pendente") statusMainBadge.classList.add("badge-danger"); else if (st === "producao") statusMainBadge.classList.add("badge-warning"); else if (st === "pronto") statusMainBadge.classList.add("badge-warning"); else if (st === "entregue") statusMainBadge.classList.add("badge-success");
           proximityBadgeContainer.innerHTML = "";
           const dias = daysBetweenToday(pedido.dataEvento);
-          if (dias !== null) {
-            const pb = document.createElement("span");
-            pb.className =
-              "proximity-badge " +
-              (dias > 15 ? "green" : dias >= 7 ? "yellow" : "red");
-            pb.innerHTML = `<i class="fas fa-calendar-alt"></i> Evento em ${dias} dias`;
-            proximityBadgeContainer.appendChild(pb);
-          }
-
-          // TIMELINE: monta os passos e marca completed/current
-          timelineContainer.innerHTML = ""; // limpa
+          if (dias !== null) { const pb = document.createElement("span"); pb.className = "proximity-badge " + (dias > 15 ? "green" : dias >= 7 ? "yellow" : "red"); pb.innerHTML = `<i class="fas fa-calendar-alt"></i> Evento em ${dias} dias`; proximityBadgeContainer.appendChild(pb); }
+          timelineContainer.innerHTML = "";
           const reached = statusToStepIndex(pedido.status);
-          const track = document.createElement("div");
-          var icon = "";
-          var color = "";
-          var display = "flex";
-          track.className = "timeline-track";
+          const track = document.createElement("div"); track.className = "timeline-track";
           TIMELINE_STEPS.forEach((step, idx) => {
-            const stepEl = document.createElement("div");
-            stepEl.className = "timeline-step";
-            if (idx < reached) {
-              stepEl.classList.add("completed");
-              color = "#16a34a";
-            }
-            if (idx === reached) {
-              stepEl.classList.add("current");
-              color = "var(--primary-color)";
-            }
-            if (idx > reached) {
-              color = "var(--border-color)";
-            }
-
-            if (step.label == "Criado") {
-              icon = "fa-plus";
-            } else if (step.label == "Confirmado") {
-              icon = "fa-check";
-            } else if (step.label == "Em Produção") {
-              icon = "fa-cogs";
-            } else if (step.label == "Pronto") {
-              icon = "fa-box-open";
-            } else if (step.label == "Entregue") {
-              icon = "fa-truck";
-              display = "none";
-            } else {
-              icon = "fa-circle";
-            }
-
-            stepEl.innerHTML = `
-                    <div style="display: flex; flex-direction: column; align-items: flex-start;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div class="timeline-dot" >
-                                <i class="fas ${icon}" style="font-size: 1rem;"></i>
-                            </div>
-                            <small style="font-weight:700">${step.label}</small>
-                        </div>
-                        <div style="background-color: ${color}; width: 2px; height: 30px; margin-left: 16px; display: ${display};"></div>
-                    </div>
-
-                `;
+            const stepEl = document.createElement("div"); stepEl.className = "timeline-step";
+            if (idx < reached) stepEl.classList.add("completed"); if (idx === reached) stepEl.classList.add("current");
+            let icon = "fa-circle";
+            if (step.label == "Criado") icon = "fa-plus"; else if (step.label == "Confirmado") icon = "fa-check"; else if (step.label == "Em Produção") icon = "fa-cogs"; else if (step.label == "Pronto") icon = "fa-box-open"; else if (step.label == "Entregue") icon = "fa-truck";
+            stepEl.innerHTML = `<div style="display:flex;flex-direction:column;align-items:flex-start;"><div style="display:flex;align-items:center;gap:8px;"><div class="timeline-dot"><i class="fas ${icon}" style="font-size:1rem;"></i></div><small style="font-weight:700">${step.label}</small></div><div style="background-color:var(--border-color); width:2px; height:30px; margin-left:16px;"></div></div>`;
             track.appendChild(stepEl);
           });
           timelineContainer.appendChild(track);
 
-          // CLIENTE
-          el("detalhe-cliente-nome").innerText = pedido.clienteNome || "—";
-          el("detalhe-cliente-telefone").innerText =
-            pedido.clienteTelefone || "—";
-          el("detalhe-cliente-email").innerText = pedido.clienteEmail || "—";
-          el("detalhe-cliente-rg").innerText = pedido.clienteRG || "—";
-          el("detalhe-cliente-cpf").innerText = pedido.clienteCPF || "—";
-          el("detalhe-observacoes-gerais-cliente").innerText =
-            pedido.observacoes || "—";
+          const setText = (id, value) => { const d = el(id); if (!d) return; d.innerText = value !== undefined && value !== null && value !== "" ? value : "—"; };
+          setText("detalhe-cliente-nome", pedido.clienteNome);
+          setText("detalhe-cliente-telefone", pedido.clienteTelefone);
+          setText("detalhe-cliente-email", pedido.clienteEmail);
+          setText("detalhe-cliente-rg", pedido.clienteRG);
+          setText("detalhe-cliente-cpf", pedido.clienteCPF);
+          setText("detalhe-observacoes-gerais-cliente", pedido.observacoes);
+          setText("detalhe-nome-contratado", pedido.nomeContratado);
+          setText("detalhe-cnpj-contratado", pedido.cnpjContratado);
+          setText("detalhe-local-evento", pedido.localEvento);
+          setText("detalhe-valor-total-contrato", pedido.valorTotalPedidoContrato);
+          setText("detalhe-data-pagamento-contrato", pedido.dataPagamentoContrato);
+          setText("detalhe-tipo-pedido", pedido.tipoPedido);
+          setText("detalhe-data-evento", pedido.dataEvento ? formatDateDisplay(pedido.dataEvento) : "");
+          setText("detalhe-data-retirada", pedido.dataRetirada ? formatDateDisplay(pedido.dataRetirada) : "");
+          setText("detalhe-horario-retirada", pedido.horarioRetirada);
+          setText("detalhe-quantidade", pedido.quantidade ?? "—");
+          setText("detalhe-tipo-embalagem", pedido.tipoEmbalagem);
+          setText("detalhe-sabores", "Funcionalidade em Manutenção");
+          setText("detalhe-observacoes", pedido.observacoes);
 
-          // CONTRATADO (novos campos do to_dict)
-          el("detalhe-nome-contratado").innerText =
-            pedido.nomeContratado || "Divino Doces Finos";
-          el("detalhe-cnpj-contratado").innerText =
-            pedido.cnpjContratado || "—";
-          el("detalhe-local-evento").innerText = pedido.localEvento || "—";
-          el("detalhe-valor-total-contrato").innerText =
-            pedido.valorTotalPedidoContrato || "—";
-          el("detalhe-data-pagamento-contrato").innerText =
-            pedido.dataPagamentoContrato || "—";
-
-          // DETALHES DO PEDIDO
-          el("detalhe-tipo-pedido").innerText = pedido.tipoPedido || "—";
-          el("detalhe-data-evento").innerText =
-            formatDateDisplay(pedido.dataEvento) || "—";
-          el("detalhe-data-retirada").innerText = pedido.dataRetirada
-            ? formatDateDisplay(pedido.dataRetirada)
-            : "—";
-          el("detalhe-horario-retirada").innerText =
-            pedido.horarioRetirada || "—";
-          el("detalhe-quantidade").innerText = pedido.quantidade ?? "—";
-          el("detalhe-tipo-embalagem").innerText = pedido.tipoEmbalagem || "—";
-          el("detalhe-sabores").innerText =
-            "Funcionalidade em Manutenção" || "—";
-          el("detalhe-observacoes").innerText = pedido.observacoes || "—";
-
-          // PRODUTOS CONTRATADOS - usa produtosContratadosJson se houver
-          const produtosBody = el("produtos-contratados-table-body");
-          const noProdutosMsg = el("no-produtos-contratados-message");
-          const TotalGeralEl = el("total-geral");
-          produtosBody.innerHTML = "";
-          noProdutosMsg.classList.add("hidden");
+          // PRODUTOS CONTRATADOS - preenche a tabela se existir JSON
           try {
+            const produtosBody = el("produtos-contratados-table-body");
+            const noProdutosMsg = el("no-produtos-contratados-message");
+            const TotalGeralEl = el("total-geral");
+            produtosBody.innerHTML = "";
+            noProdutosMsg.classList.add("hidden");
             let produtos = [];
             let totalGeral = 0;
             if (pedido.produtosContratadosJson) {
-              produtos = JSON.parse(pedido.produtosContratadosJson);
+              // pode vir como objeto ou string JSON
+              produtos = typeof pedido.produtosContratadosJson === 'string' ? JSON.parse(pedido.produtosContratadosJson) : pedido.produtosContratadosJson;
             }
             if (Array.isArray(produtos) && produtos.length > 0) {
               produtos.forEach((prod) => {
@@ -846,242 +1022,133 @@ DoceSystem{% endblock %} {% block content %}
                 tr.classList.add("produto-row");
                 const qtd = prod.Quantidade ?? prod.quantidade ?? "—";
                 const nome = prod.Produto ?? prod.produto ?? "—";
-                const valUnit =
-                  prod["Valor Unitário"] ??
-                  prod.valor_unitario ??
-                  prod.valorUnitario ??
-                  "—";
-                const valTotal =
-                  prod["Valor Total Item"] ??
-                  prod.valor_total ??
-                  prod.valorTotal ??
-                  "—";
-                totalGeral += parseFloat(valTotal.replace(",", ".")) || 0;
+                const valUnit = prod["Valor Unitário"] ?? prod.valor_unitario ?? prod.valorUnitario ?? prod.valorUnitario ?? "—";
+                const valTotal = prod["Valor Total Item"] ?? prod.valor_total ?? prod.valorTotal ?? "—";
+                const numericTotal = parseFloat(String(valTotal).replace(',', '.')) || 0;
+                totalGeral += numericTotal;
                 tr.innerHTML = `
                             <td style="padding: 12px 16px; white-space: nowrap; font-size: 0.875rem; color: var(--text-primary);">${qtd}</td>
                             <td style="padding: 12px 16px; white-space: nowrap; font-size: 0.875rem; color: var(--text-primary);">${nome}</td>
                             <td style="padding: 12px 16px; white-space: nowrap; font-size: 0.875rem; color: var(--text-primary);">R$  ${valUnit}</td>
                             <td style="padding: 12px 16px; white-space: nowrap; font-size: 0.875rem; color: var(--text-primary);">R$  ${valTotal}</td>
                         `;
-
-                TotalGeralEl.innerText = `R$ ${totalGeral
-                  .toFixed(2)
-                  .replace(".", ",")}`;
                 produtosBody.appendChild(tr);
               });
+              TotalGeralEl.innerText = `R$ ${totalGeral.toFixed(2).replace('.', ',')}`;
             } else {
               noProdutosMsg.classList.remove("hidden");
             }
           } catch (jsonErr) {
-            console.error("Erro ao analisar produtosContratadosJson:", jsonErr);
+            console.error("Erro ao processar produtosContratadosJson:", jsonErr);
+            const noProdutosMsg = el("no-produtos-contratados-message");
             noProdutosMsg.innerText = "Erro ao carregar produtos contratados.";
             noProdutosMsg.classList.remove("hidden");
           }
+
+          carregarInteracoes(pedidoId);
+          carregarArquivos(pedidoId);
+          // garante bind do botão de enviar interação após carregar a seção
+          try { bindEnviarInteracao(); } catch (e) { console.warn('bindEnviarInteracao falhou:', e); }
         } catch (err) {
           console.error("Erro de conexão ao buscar pedido:", err);
-          showModal &&
-            showModal("Erro de conexão ao carregar detalhes do pedido.");
+          showModal && showModal("Erro de conexão ao carregar detalhes do pedido.");
         }
       }
-
-      // Logica javascript do historico de interações:(abaixo)
 
       async function carregarInteracoes(pedidoId) {
         try {
-          const response = await fetch(`/api/pedidos/${pedidoId}/interacoes`, {
-            headers: { "X-User-Id": localStorage.getItem("userId") },
-          });
+          const response = await fetch(`/api/pedidos/${pedidoId}/interacoes`, { headers: { "X-User-Id": localStorage.getItem("userId") } });
           const interacoes = await response.json();
-
-          const container = document.getElementById("interacoes-lista");
-          container.innerHTML = "";
-
-          if (interacoes.length === 0) {
-            container.innerHTML =
-              '<p class="text-muted">Nenhuma interação registrada ainda.</p>';
-            return;
-          }
-
+          const container = document.getElementById("interacoes-lista"); container.innerHTML = "";
+          if (!interacoes || interacoes.length === 0) { container.innerHTML = '<p class="text-muted">Nenhuma interação registrada ainda.</p>'; return; }
           interacoes.forEach((interacao) => {
-            const item = document.createElement("div");
-            item.className = "boxInteracao";
-            item.innerHTML = `
-            <div style="display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; background-color:var(--primary-color); color:#fff;">
-              <i class="fas fa-clock"></i>
-            </div>
-            <div>
-                <p style="font-weight:700">${interacao.mensagem}</p>
-                <div style="font-weight:300; font-size:0.8rem;">
-                    <p>
-                        <spam >${interacao.data_interacao}</spam>
-                        •  
-                        <spam>${interacao.autor}</spam>
-                    </p> 
-                </div>
-            </div>
-      `;
+            const item = document.createElement("div"); item.className = "boxInteracao";
+            item.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background-color:var(--primary-color);color:#fff;"><i class="fas fa-clock"></i></div><div><p style="font-weight:700">${interacao.mensagem}</p><div style="font-weight:300;font-size:0.8rem;"><p><span>${interacao.data_interacao}</span> • <span>${interacao.autor}</span></p></div></div>`;
             container.appendChild(item);
           });
-        } catch (error) {
-          console.error("Erro ao carregar interações:", error);
-        }
+        } catch (error) { console.error("Erro ao carregar interações:", error); }
       }
 
       async function adicionarInteracao(pedidoId) {
-        const mensagem = document.getElementById("nova-interacao").value.trim();
-        if (!mensagem) return alert("Digite uma mensagem antes de enviar.");
-
-        const data = {
-          autor: localStorage.getItem("userNome") || "Usuário",
-          mensagem: mensagem,
-        };
-
         try {
-          const response = await fetch(`/api/pedidos/${pedidoId}/interacoes`, {
-            method: "POST",
+          const input = document.getElementById('nova-interacao');
+          if (!input) return;
+          const mensagem = (input.value || '').trim();
+          if (!mensagem) return alert('Digite uma interação antes de enviar.');
+          const resp = await fetch(`/api/pedidos/${pedidoId}/interacoes`, {
+            method: 'POST',
             headers: {
-              "Content-Type": "application/json",
-              "X-User-Id": localStorage.getItem("userId"),
+              'Content-Type': 'application/json',
+              'X-User-Id': localStorage.getItem('userId')
             },
-            body: JSON.stringify(data),
+            body: JSON.stringify({ mensagem })
           });
-
-          const result = await response.json();
-          console.log(result);
-          document.getElementById("nova-interacao").value = "";
-          carregarInteracoes(pedidoId); // Recarrega a lista após adicionar
-        } catch (error) {
-          console.error("Erro ao adicionar interação:", error);
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ message: 'Erro' }));
+            alert('Erro ao enviar interação: ' + (err.message || resp.status));
+            return;
+          }
+          input.value = '';
+          carregarInteracoes(pedidoId);
+        } catch (err) {
+          console.error('Erro ao adicionar interação:', err);
+          alert('Erro ao enviar interação.');
         }
       }
-
-      // associar evento ao botão
-      document
-        .getElementById("btn-enviar-interacao")
-        .addEventListener("click", () => {
-          const pedidoId =
-            new URLSearchParams(window.location.search).get("id") ||
-            window.location.pathname.split("/").pop();
-          adicionarInteracao(pedidoId);
-        });
-
-      // Logica javascript do historico de interaçoes(acima)
-
-      // Logica de para anexar arquivos: (abaixo)
 
       async function carregarArquivos(pedidoId) {
         try {
-          const response = await fetch(`/api/pedidos/${pedidoId}/arquivos`, {
-            headers: { "X-User-Id": localStorage.getItem("userId") },
-          });
+          const response = await fetch(`/api/pedidos/${pedidoId}/arquivos`, { headers: { "X-User-Id": localStorage.getItem("userId") } });
           const arquivos = await response.json();
-
-          const container = document.getElementById("lista-arquivos");
-          container.innerHTML = "";
-
-          if (arquivos.length === 0) {
-            container.innerHTML =
-              '<p class="text-muted">Nenhum arquivo enviado ainda.</p>';
-            return;
-          }
-
+          const container = document.getElementById("lista-arquivos"); container.innerHTML = "";
+          if (!arquivos || arquivos.length === 0) { container.innerHTML = '<p class="text-muted">Nenhum arquivo enviado ainda.</p>'; return; }
           arquivos.forEach((a) => {
-            console.log("url:", a.url);
-            console.log("nome", a.nome);
-            const item = document.createElement("div");
-            item.className = "border rounded p-2 mb-2 bg-light";
-            item.innerHTML = `
-        <strong>${a.nome}</strong> <small class="text-muted">(${
-              a.data_envio
-            })</small><br>
-        <p class="mb-1">${a.legenda || ""}</p>
-        <a href="${
-          a.url
-        }" target="_blank" class="btn btn-sm btn-outline-primary">Visualizar</a>
-      `;
+            const item = document.createElement("div"); item.className = "border rounded p-2 mb-2 bg-light";
+            item.innerHTML = `<strong>${a.nome}</strong> <small class="text-muted">(${a.data_envio})</small><br><p class="mb-1">${a.legenda || ""}</p><a href="${a.url}" target="_blank" class="btn btn-sm btn-outline-primary">Visualizar</a>`;
             container.appendChild(item);
           });
-        } catch (error) {
-          console.error("Erro ao carregar arquivos:", error);
-        }
+        } catch (error) { console.error("Erro ao carregar arquivos:", error); }
       }
-
-      // lógica para fazer da div uma drop zone de arquivos
 
       const dropZone = document.getElementById("drop-zone");
       const fileInput = document.getElementById("file-input");
       const fileList = document.getElementById("file-list");
-
       dropZone.addEventListener("click", () => fileInput.click());
-
-      dropZone.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        dropZone.style.background = "#f0f9ff";
-        dropZone.style.borderColor = "#3b82f6";
-      });
-
-      dropZone.addEventListener("dragleave", () => {
-        dropZone.style.background = "transparent";
-        dropZone.style.borderColor = "#cbd5e1";
-      });
-
-      dropZone.addEventListener("drop", (e) => {
-        e.preventDefault();
-        dropZone.style.background = "transparent";
-        dropZone.style.borderColor = "#cbd5e1";
-        handleFiles(e.dataTransfer.files);
-      });
-
+      dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.background = "#f0f9ff"; dropZone.style.borderColor = "#3b82f6"; });
+      dropZone.addEventListener("dragleave", () => { dropZone.style.background = "transparent"; dropZone.style.borderColor = "#cbd5e1"; });
+      dropZone.addEventListener("drop", (e) => { e.preventDefault(); dropZone.style.background = "transparent"; dropZone.style.borderColor = "#cbd5e1"; handleFiles(e.dataTransfer.files); });
       fileInput.addEventListener("change", () => handleFiles(fileInput.files));
+      function handleFiles(files) { for (const file of files) { const li = document.createElement("li"); li.textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`; li.style.color = "#1f2937"; li.style.fontSize = "0.9rem"; li.style.marginBottom = "6px"; fileList.appendChild(li); } }
+      document.getElementById("upload-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const pedidoIdLocal = new URLSearchParams(window.location.search).get("id") || window.location.pathname.split("/").pop();
+        const formData = new FormData();
+        if (fileInput.files.length === 0) return alert("Selecione um arquivo.");
+        formData.append("file", fileInput.files[0]);
+        formData.append("legenda", document.getElementById("arquivo-legenda").value);
+        try {
+          const response = await fetch(`/api/pedidos/${pedidoIdLocal}/upload`, { method: "POST", headers: { "X-User-Id": localStorage.getItem("userId") }, body: formData });
+          const result = await response.json();
+          alert(result.message);
+          carregarArquivos(pedidoIdLocal);
+          document.getElementById("upload-form").reset();
+        } catch (error) { console.error("Erro ao enviar arquivo:", error); }
+      });
 
-      function handleFiles(files) {
-        for (const file of files) {
-          const li = document.createElement("li");
-          li.textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(
-            1
-          )} KB)`;
-          li.style.color = "#1f2937";
-          li.style.fontSize = "0.9rem";
-          li.style.marginBottom = "6px";
-          fileList.appendChild(li);
-        }
-      }
-      document
-        .getElementById("upload-form")
-        .addEventListener("submit", async (e) => {
-          e.preventDefault();
-          const pedidoId =
-            new URLSearchParams(window.location.search).get("id") ||
-            window.location.pathname.split("/").pop();
-          const formData = new FormData();
-          formData.append("file", fileInput.files[0]);
-          formData.append(
-            "legenda",
-            document.getElementById("arquivo-legenda").value
-          );
-
-          try {
-            const response = await fetch(`/api/pedidos/${pedidoId}/upload`, {
-              method: "POST",
-              headers: { "X-User-Id": localStorage.getItem("userId") },
-              body: formData,
-            });
-            const result = await response.json();
-
-            alert(result.message);
-            carregarArquivos(pedidoId);
-            document.getElementById("upload-form").reset();
-          } catch (error) {
-            console.error("Erro ao enviar arquivo:", error);
-          }
+      // liga o botão de enviar interação (protege contra ligações duplicadas)
+      function bindEnviarInteracao() {
+        const btn = document.getElementById("btn-enviar-interacao");
+        if (!btn) return;
+        if (btn.dataset.bound === "1") return;
+        btn.addEventListener("click", () => {
+          const pedidoId = new URLSearchParams(window.location.search).get("id") || window.location.pathname.split("/").pop();
+          adicionarInteracao(pedidoId);
         });
+        btn.dataset.bound = "1";
+      }
 
-      // logica para anexar arquivos no pedido acima
-
-      // inicia
-      carregarPedido();
-      carregarInteracoes(pedidoId);
-      carregarArquivos(pedidoId);
+      // inicia (aguarda carregarPedido para garantir bindings e DOM prontos)
+      await carregarPedido();
     })();
   </script>
   {% endblock %}

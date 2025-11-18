@@ -9,33 +9,8 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 @auth_bp.route('/register', methods=['POST'])
 def register_user():
-    data = request.json
-    email = data.get('email')
-    password = data.get('password')
-    nome_completo = data.get('nome_completo') # <<< ALTERACAO FINDA DO INTEGRACAO DO FRONT-END
-    tipo_usuario = data.get('tipo_usuario', 'funcionario') # <<< ALTERACAO FINDA DO INTEGRACAO DO FRONT-END
-
-    # A validação agora inclui o nome completo
-    if not email or not password or not nome_completo:
-        return jsonify({'message': 'Nome, e-mail e senha são obrigatórios.'}), 400
-
-    if User.query.filter_by(email=email).first():
-        return jsonify({'message': 'E-mail já cadastrado.'}), 409
-
-    hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
-
-    # Criamos o novo usuário com todos os campos
-    new_user = User(
-        email=email, 
-        nome_completo=nome_completo, 
-        tipo_usuario=tipo_usuario, 
-        password_hash=hashed_password
-    )
-
-    db.session.add(new_user)
-    db.session.commit()
-
-    return jsonify({'message': 'Usuário cadastrado com sucesso!'}), 201
+    # Registro desabilitado: endpoint retorna 403 para impedir criação pública de contas.
+    return jsonify({'message': 'Registro de novos usuários está desabilitado.'}), 403
 
 @auth_bp.route('/login', methods=['POST'])
 def login_user():
