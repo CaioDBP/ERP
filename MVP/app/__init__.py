@@ -20,9 +20,14 @@ def create_app():
     # Carregar configurações do arquivo config.py
     app.config.from_object('app.config.Config')
 
+
+    
     # --- DEBUG: Esta linha do esqueleto é útil para confirmar o endereço do banco de dados ---
     print("*" * 80)
-    print(f"INFO: Conectando ao banco de dados: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    if app.config['SQLALCHEMY_DATABASE_URI'] == os.environ.get('DATABASE_URL'):
+        print("Conectando ao banco de dados via NEON")
+    else:   
+        print(f"INFO: Conectando ao banco de dados: {app.config['SQLALCHEMY_DATABASE_URI']}")
     print("*" * 80)
 
     # 2. INICIALIZAMOS O BANCO DE DADOS COM A NOSSA APLICAÇÃO
@@ -57,7 +62,7 @@ def create_app():
     # 3. CRIAMOS AS TABELAS NO BANCO DE DADOS
     # Este bloco de código lê seus models.py e cria as tabelas no arquivo site.db
     with app.app_context():
-        #db.drop_all() #descomente essa linha caso precise recriar o banco de dados
+        # db.drop_all() #descomente essa linha caso precise recriar o banco de dados
         db.create_all()
         print("Banco de dados inicializado e tabelas criadas (se necessário).")
 
