@@ -1,0 +1,21 @@
+# Forçar arquivos .sh (scripts Linux) a usarem LF
+*.sh text eol=lf
+
+# Garantir que arquivos Python também fiquem com LF
+*.py text eol=lf
+
+# Normalizar arquivos de texto
+*.txt text
+*.md text
+
+# Ignorar arquivos binários (não tocar nas quebras de linha)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+
+# Garantir que requirements.txt não seja alterado
+requirements.txt text eol=lf
