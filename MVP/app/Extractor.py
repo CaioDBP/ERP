@@ -1021,7 +1021,7 @@ def gerar_contrato_pdf_direto(dados: Dict[str, Any]) -> Optional[BytesIO]:
         print(f"[ERRO] Falha ao gerar contrato PDF com WeasyPrint: {e}")
         return None
 
-def gerar_relatorio_entrega(dados: Dict[str, Any]) -> Optional[BytesIO]:
+def gerar_relatorio_entrega(dados: Dict[str, Any], nome_arquivo: str = None) -> Optional[BytesIO]:
     try:
         document = Document()
         document.add_heading('RELATÓRIO DE ENTREGA', 0)
@@ -1033,21 +1033,75 @@ def gerar_relatorio_entrega(dados: Dict[str, Any]) -> Optional[BytesIO]:
         document.add_paragraph(f"Local do Evento: {local_evento}")
         document.add_paragraph(f"Data de Emissão: {datetime.datetime.now().strftime('%d/%m/%Y')}")
         document.add_paragraph("\nProdutos Contratados:")
+        # Normalizar fonte de produtos: aceita várias chaves e formatos
         produtos = []
-        produtos_json_str = dados.get('produtosContratadosJson', '[]')
-        try:
-            produtos = json.loads(produtos_json_str)
-        except json.JSONDecodeError:
-            print("[AVISO] JSON de produtos inválido ao gerar Relatório.")
-            produtos = dados.get('Produtos Contratados', [])
-        if produtos:
+        # possíveis campos que podem conter os produtos
+        possible_keys = ['produtosContratadosJson', 'Produtos Contratados', 'ProdutosContratados', 'produtos', 'produtos_contratados', 'Produtos']
+        produtos_raw = None
+        for k in possible_keys:
+            if k in dados and dados.get(k) not in (None, '', '[]'):
+                produtos_raw = dados.get(k)
+                break
+
+        # Se não encontrou nas chaves acima, tenta chave padrão antiga
+        if produtos_raw is None:
+            produtos_raw = dados.get('produtosContratadosJson', '[]')
+
+        # Converte para lista de dicionários quando necessário
+        if isinstance(produtos_raw, str):
+            try:
+                produtos = json.loads(produtos_raw)
+            except Exception:
+                # Se for uma string simples, não é JSON — deixa em lista única
+                produtos = [produtos_raw] if produtos_raw else []
+        elif isinstance(produtos_raw, list):
+            produtos = produtos_raw
+        elif produtos_raw is None:
+            produtos = []
+        else:
+            # Caso seja um único dicionário
+            produtos = [produtos_raw]
+
+        # Normalizar chaves internas para 'Quantidade', 'Produto', 'Valor Unitário', 'Valor Total Item'
+        def normalize_item(it):
+            if not isinstance(it, dict):
+                # representa como string na coluna Produto
+                return {'Quantidade': '', 'Produto': str(it), 'Valor Unitário': '', 'Valor Total Item': ''}
+
+            keys_map = {}
+            for key in it.keys():
+                k = key.lower()
+                if 'quant' in k:
+                    keys_map['Quantidade'] = key
+                elif 'produto' in k or 'prod' == k:
+                    keys_map['Produto'] = key
+                elif 'unit' in k or 'valor unit' in k or 'valorunit' in k:
+                    keys_map['Valor Unitário'] = key
+                elif 'total' in k or 'valor total' in k or 'totalitem' in k:
+                    keys_map['Valor Total Item'] = key
+
+            return {
+                'Quantidade': it.get(keys_map.get('Quantidade', ''), ''),
+                'Produto': it.get(keys_map.get('Produto', ''), ''),
+                'Valor Unitário': it.get(keys_map.get('Valor Unitário', ''), ''),
+                'Valor Total Item': it.get(keys_map.get('Valor Total Item', ''), '')
+            }
+
+        produtos_normalizados = [normalize_item(p) for p in produtos]
+
+        print(f"[INFO] gerar_relatorio_entrega: produtos detectados = {len(produtos_normalizados)}")
+
+        if produtos_normalizados:
             tabela = document.add_table(rows=1, cols=4)
             tabela.style = 'Table Grid'
             hdr_cells = tabela.rows[0].cells
             hdr_cells[0].text, hdr_cells[1].text, hdr_cells[2].text, hdr_cells[3].text = 'Quantidade', 'Produto', 'Valor Unitário', 'Valor Total'
-            for item in produtos:
+            for item in produtos_normalizados:
                 row_cells = tabela.add_row().cells
-                row_cells[0].text, row_cells[1].text, row_cells[2].text, row_cells[3].text = str(item.get('Quantidade', '')), str(item.get('Produto', '')), str(item.get('Valor Unitário', '')), str(item.get('Valor Total Item', ''))
+                row_cells[0].text = str(item.get('Quantidade', ''))
+                row_cells[1].text = str(item.get('Produto', ''))
+                row_cells[2].text = str(item.get('Valor Unitário', ''))
+                row_cells[3].text = str(item.get('Valor Total Item', ''))
         else:
             document.add_paragraph("Nenhum produto encontrado.")
         document.add_paragraph(f"\nValor Total do Pedido: R$ {dados.get('Valor Total do Pedido', dados.get('Valor_Total_do_Pedido', 'N/A'))}")
@@ -1058,6 +1112,18 @@ def gerar_relatorio_entrega(dados: Dict[str, Any]) -> Optional[BytesIO]:
         doc_stream = BytesIO()
         document.save(doc_stream)
         doc_stream.seek(0)
+
+        # Se um caminho de arquivo foi passado, salvar o .docx nesse caminho
+        if nome_arquivo:
+            try:
+                with open(nome_arquivo, 'wb') as f:
+                    f.write(doc_stream.getvalue())
+                # retornamos None já que o arquivo foi gravado no disco
+                return None
+            except Exception as e:
+                print(f"[ERRO] Falha ao gravar arquivo '{nome_arquivo}': {e}")
+                return None
+
         return doc_stream
     except Exception as e:
         print(f"[ERRO] Falha ao salvar relatório de entrega: {e}")

@@ -93,18 +93,17 @@ async function carregarPedidos() {
                 <td>${pedido.dataEvento || "-"}</td>
                 <td>${pedido.tipoPedido || "-"}</td>
                 <td>${pedido.quantidade ?? "-"}</td>
-                <td><span class="badge ${pedido.status === 'confirmado' ? 'badge-success' : (pedido.status === 'producao' ? 'badge-warning' : 'badge-warning')}">${statusCapitalizado}</span></td>
+                <td><span class="badge ${pedido.status === 'confirmado' ? 'badge-success' : (pedido.status === 'cancelado' ? 'badge-danger' : 'badge-warning')}">${statusCapitalizado}</span></td>
                 <td><span class="badge ${pedido.prioridade === 'alta' || pedido.prioridade === 'urgente' ? 'badge-danger' : 'badge-secondary'}">${prioridadeCapitalizada}</span></td>
                 <td>${responsavel}</td>
                 <td class="text-center">
-                    <button  class=" btn btn-sm btn-outline-primary btn-detalhes me-2" title="Ver detalhes">
-                        <a href="/pedidos/${pedido.id}" class="  btn-sm ">
+                    <a href="/pedidos/${pedido.id}" class="btn btn-sm btn-outline-primary btn-detalhes me-2" title="Ver detalhes" aria-label="Ver detalhes">
                         <i class="fas fa-eye" style="color: black;"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-success btn-confirmar me-2" title="Confirmar pedido">
+                    </a>
+                    <button class="btn btn-sm btn-outline-success btn-confirmar me-2" title="Confirmar pedido" aria-label="Confirmar pedido">
                         <i class="fas fa-check"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger btn-excluir" title="Excluir pedido">
+                    <button class="btn btn-sm btn-outline-danger btn-excluir" title="Excluir pedido" aria-label="Excluir pedido">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </td>
@@ -112,7 +111,9 @@ async function carregarPedidos() {
 
 
             // Listeners confirmar/excluir
-            row.querySelector(".btn-confirmar").addEventListener("click", async () => {
+            row.querySelector(".btn-confirmar").addEventListener("click", async (event) => {
+                // impedir propagação por segurança
+                if (event && event.preventDefault) { event.preventDefault(); event.stopPropagation(); }
                 if (!confirm("Deseja confirmar este pedido?")) return;
                 try {
                     const res = await fetch(`/api/pedidos/${pedido.id}`, {
@@ -130,8 +131,9 @@ async function carregarPedidos() {
                     alert("Erro ao confirmar pedido.");
                 }
             });
-
-            row.querySelector(".btn-excluir").addEventListener("click", async () => {
+            row.querySelector(".btn-excluir").addEventListener("click", async (event) => {
+                // Evita que um ancestor trate o clique (ex: link errado) e previne navegação
+                if (event && event.preventDefault) { event.preventDefault(); event.stopPropagation(); }
                 if (!confirm("Tem certeza que deseja excluir este pedido?")) return;
                 try {
                     const res = await fetch(`/api/pedidos/${pedido.id}`, {

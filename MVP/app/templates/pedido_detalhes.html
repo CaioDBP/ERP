@@ -577,6 +577,16 @@ DoceSystem{% endblock %} {% block content %}
         { key: "entregue", label: "Entregue" },
       ];
 
+      // helper seguro para exibir mensagens: usa showModal se existir, senão alerta
+      const safeShowModal = (msg) => {
+        try {
+          if (typeof showModal === 'function') return showModal(msg);
+        } catch (e) {
+          // ignore
+        }
+        try { alert(msg); } catch(e) { console.log(msg); }
+      };
+
       function statusToStepIndex(status) {
         if (!status) return 0;
         const s = status.toLowerCase();
@@ -935,21 +945,51 @@ DoceSystem{% endblock %} {% block content %}
 
       btnGerarComprovante && btnGerarComprovante.addEventListener("click", async () => {
         const userId = localStorage.getItem("userId");
-        if (!userId) { showModal && showModal("Você precisa estar logado para gerar um comprovante."); return; }
+        if (!userId) { safeShowModal("Você precisa estar logado para gerar um comprovante."); return; }
         try {
           const resp = await fetch(`/api/reports/generate-delivery-report/${pedidoId}`, { method: "GET", headers: { "X-User-Id": userId } });
-          if (!resp.ok) { const err = await resp.json().catch(() => ({ message: "Erro" })); showModal && showModal("Erro ao gerar comprovante: " + (err.message || resp.status)); return; }
+          if (!resp.ok) { const err = await resp.json().catch(() => ({ message: "Erro" })); safeShowModal("Erro ao gerar comprovante: " + (err.message || resp.status)); return; }
           const blob = await resp.blob();
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement("a"); a.style.display = "none"; a.href = url; a.download = `comprovante_retirada_${pedidoId}.docx`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url);
-          showModal && showModal("Comprovante gerado. Download iniciado.");
-        } catch (e) { console.error(e); showModal && showModal("Erro de conexão ao gerar comprovante."); }
+          safeShowModal("Comprovante gerado. Download iniciado.");
+        } catch (e) { console.error(e); safeShowModal("Erro de conexão ao gerar comprovante."); }
       });
 
-      btnCancelar && btnCancelar.addEventListener("click", async () => {
-        if (!confirm("Tem certeza que deseja cancelar este pedido?")) return;
-        const motivo = prompt("Digite o motivo do cancelamento (opcional):");
-        showModal && showModal("Cancelamento pendente de implementação no backend. Motivo: " + (motivo || "—"));
+      btnCancelar && btnCancelar.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!confirm("Tem certeza que deseja realmente cancelar este pedido?")) return;
+        try {
+          const userId = localStorage.getItem("userId");
+          if (!userId) {
+            safeShowModal("Você precisa estar logado para cancelar pedidos.");
+            return;
+          }
+          const payload = { status: "cancelado" };
+          const resp = await fetch(`/api/pedidos/${pedidoId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "X-User-Id": userId
+            },
+            body: JSON.stringify(payload)
+          });
+          if (!resp.ok) {
+            // Mostra mensagem de erro vinda do servidor (se houver) e atualiza a UI para refletir estado atual
+            const txt = await resp.text().catch(() => null);
+            console.error("Cancelamento retornou não-ok:", resp.status, txt);
+            safeShowModal("Erro ao cancelar pedido: " + (txt || resp.status));
+            await carregarPedido();
+            return;
+          }
+          safeShowModal("Pedido cancelado com sucesso.");
+          await carregarPedido();
+        } catch (err) {
+          console.error("Erro ao cancelar pedido (exceção):", err);
+          safeShowModal("Erro ao cancelar pedido. Verifique o console para detalhes.");
+          try { await carregarPedido(); } catch(e){ /* ignora */ }
+        }
       });
 
       async function carregarPedido() {
@@ -957,7 +997,7 @@ DoceSystem{% endblock %} {% block content %}
         if (!userId) { showModal && showModal("Usuário não autenticado. Faça login."); return; }
         try {
           const resp = await fetch(`/api/pedidos/${pedidoId}`, { method: "GET", headers: { "X-User-Id": userId } });
-          if (!resp.ok) { const err = await resp.json().catch(() => ({ message: "Erro" })); console.error("Erro ao carregar pedido:", err); showModal && showModal("Erro: Erro ao carregar dados do pedido"); return; }
+          if (!resp.ok) { const err = await resp.json().catch(() => ({ message: "Erro" })); console.error("Erro ao carregar pedido:", err); safeShowModal("Erro: Erro ao carregar dados do pedido"); return; }
           const pedido = await resp.json();
           pageSubtitle.innerText = `${pedido.clienteNome || "—"} ${pedido.dataEvento ? "– " + formatDateDisplay(pedido.dataEvento) : ""}`;
           el("responsavel-creator").innerText = pedido.responsavel || "Damaris";
